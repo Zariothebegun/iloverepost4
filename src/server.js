@@ -35,7 +35,7 @@ async function handleApi(request, response, url) {
     setPlan(session, requestedPlan);
   }
 
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  if (request.method === "GET" && (url.pathname === "/api/health" || url.pathname === "/health")) {
     return json(response, 200, {
       ok: true,
       service: "iloverepost",
