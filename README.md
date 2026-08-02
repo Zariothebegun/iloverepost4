@@ -1,51 +1,85 @@
-# iLoveRepost - TikTok Repost Finder
+# ILOVEREPOST
 
-Encontra reposts no TikTok de qualquer perfil, filtrando por palavra-chave.
+Minimal TikTok repost retriever built in `HTML/CSS/JS` plus:
+- a Node backend for repost search and downloads
+- a FastAPI backend for Stripe + Supabase billing
 
-## Stack
+## What it does
 
-- **Backend**: Node.js + Express + Playwright (Chromium)
-- **Frontend**: HTML/CSS/JS puro (`public/index.html`)
-- **Hosting**: Render (Docker)
+- Accepts a TikTok username.
+- Resolves the user's `secUid` from TikTok profile hydration data.
+- Calls TikTok's internal web endpoints.
+- Supports cursor pagination.
+- Filters videos by keyword in the caption.
+- Returns normalized JSON for the frontend.
 
-## Correr localmente
+## Run locally
 
 ```bash
-npm install
-npx playwright install --with-deps chromium
-npm start
-# abre http://localhost:3000
+node src/server.js
 ```
 
-## Deploy no Render
+Then open `http://localhost:3000`.
 
-1. New Web Service -> Build and deploy from a Git repository
-2. Cola o link deste repo
-3. Render deteta o `Dockerfile` (base `mcr.microsoft.com/playwright`, ja traz o Chromium)
-4. Create Web Service e espera pelo build
+## Billing backend
 
-O `render.yaml` ja define plano free, `PORT=3000` e health check em `/health`.
+Install Python dependencies:
 
-## Endpoints
+```bash
+python -m pip install -r requirements.txt
+```
 
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| `POST` | `/api/fetch-reposts` | Body: `{ "username": "khaby.lame", "keyword": "love", "scrolls": 2 }` |
-| `GET`  | `/api/download?url=...` | Download do video sem marca de agua (via tikwm) |
-| `GET`  | `/health` | Health check |
+Run the FastAPI billing server:
 
-## Variaveis de ambiente
+```bash
+python -m uvicorn main:app --reload
+```
 
-| Variavel | Descricao | Default |
-|----------|-----------|---------|
-| `PORT` | Porta do servidor | `3000` |
+The billing backend runs on `http://127.0.0.1:8000` by default.
 
-## Aviso
+Set these environment variables before starting it:
 
-O TikTok bloqueia scraping. Se mudarem o layout ou reforcarem o anti-bot,
-a ferramenta pode deixar de funcionar. No plano free do Render o servico
-adormece por inatividade e o primeiro pedido demora mais.
+```powershell
+$env:SUPABASE_URL="https://your-project.supabase.co"
+$env:SUPABASE_ANON_KEY="your-supabase-key"
+$env:SUPABASE_SERVICE_ROLE_KEY="your-supabase-service-role-key"
+$env:STRIPE_SECRET_KEY="your-stripe-secret-key"
+$env:STRIPE_PRICE_ID="your-price-id"
+$env:STRIPE_WEBHOOK_SECRET="your-stripe-webhook-secret"
+$env:CHECKOUT_SUCCESS_URL="http://localhost:3000/success"
+$env:CHECKOUT_CANCEL_URL="http://localhost:3000/cancel"
+python -m uvicorn main:app --reload
+```
 
-## Licenca
+The frontend's `Upgrade to Pro` and `Sign Up` buttons call `POST /create-checkout-session` on the FastAPI server.
 
-MIT
+## API
+
+- `GET /api/plans`
+- `POST /api/account/plan?plan=free|pro`
+- `GET /api/reposts?username=tiktok&keyword=storm&cursor=0&count=16`
+- `GET /api/download?url=https://www.tiktok.com/@user/video/123`
+
+## Billing API
+
+- `GET /`
+- `GET /health`
+- `POST /create-checkout-session`
+- `POST /stripe-webhook`
+
+## Frontend source copy
+
+To copy the original v0/Next frontend source repo into this workspace without installing its dependencies:
+
+```bash
+node tools/sync-frontend-source.mjs
+```
+
+The downloaded source lands in `frontend-source/v0-iloverepost-frontend-build/`.
+
+## Notes
+
+- `reposts` is implemented.
+- Downloading reposted videos is exposed through a public TikTok downloader approach.
+- Search plans are still local placeholders in the Node app until full auth/subscription sync is connected.
+- Stripe webhooks must be configured in your Stripe dashboard so `checkout.session.completed` reaches the FastAPI backend.
