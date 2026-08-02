@@ -280,7 +280,14 @@ async function fetchUserDetailContext(profileUrl, normalizedUsername, cookieJar)
 
   if (!response.ok) return null;
 
-  const payload = await parseJsonResponse(response);
+  let payload;
+
+  try {
+    payload = await parseJsonResponse(response);
+  } catch {
+    return null;
+  }
+
   const secUid = findSecUid(payload);
 
   if (!secUid) return null;
