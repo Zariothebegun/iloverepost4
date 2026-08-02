@@ -1,3 +1,22 @@
-node_modules
-.git
-README.md
+FROM node:20-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libgbm1 libasound2 \
+    libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libpango-1.0-0 libcairo2 libgtk-3-0 libcurl4 libxml2 fonts-liberation \
+    libappindicator3-1 libu2f-udev libvulkan1 xdg-utils wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json .
+RUN npm install
+RUN npx playwright install chromium
+
+COPY server.js .
+COPY public ./public
+
+ENV PORT=3000
+EXPOSE 3000
+
+CMD ["node", "server.js"]
