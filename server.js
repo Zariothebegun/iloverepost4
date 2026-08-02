@@ -132,6 +132,8 @@ async function scrapeReposts(username, keyword, scrollsCount = 2) {
         debug.intercepted++;
         latestCursor = json?.cursor ?? latestCursor;
         latestHasMore = json?.hasMore === true;
+        debug.lastCursor = latestCursor;
+        debug.hasMore = latestHasMore;
         // A lista vem da resposta criada pelo TikTok; não reconstruímos a URL.
         pushItems(Array.isArray(json?.itemList) ? json.itemList : extractItems(json), 'browser-response');
       } catch (_) { /* resposta não JSON ou já consumida */ }
