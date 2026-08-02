@@ -3,6 +3,7 @@ services:
     name: iloverepost
     runtime: docker
     plan: free
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: PORT
         value: 3000
