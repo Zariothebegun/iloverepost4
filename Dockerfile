@@ -1,5 +1,4 @@
-# Imagem oficial do Playwright: ja traz o Chromium + todas as libs do sistema
-FROM mcr.microsoft.com/playwright:v1.47.2-jammy
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
@@ -9,6 +8,9 @@ ENV NODE_ENV=production \
 
 COPY package.json ./
 RUN npm install --omit=dev
+
+RUN npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY server.js ./
 COPY public ./public
