@@ -102,8 +102,11 @@ async function scrapeReposts(username, keyword, scrollsCount = 2) {
   const page = await context.newPage();
   const profileUrl = `https://www.tiktok.com/@${cleanUsername}`;
   const rawReposts = [], seenIds = new Set();
+  const responseTasks = new Set();
   let profileInfo = null, secUid = '';
-  const debug = { intercepted: 0, strategies: [] };
+  let latestCursor = null;
+  let latestHasMore = true;
+  const debug = { intercepted: 0, requests: 0, strategies: [] };
   function pushItems(items, source) {
     let added = 0;
     for (const item of items || []) {
@@ -113,11 +116,29 @@ async function scrapeReposts(username, keyword, scrollsCount = 2) {
     if (added) { debug.strategies.push(`${source}:+${added}`); console.log(`[${source}] +${added} itens (total ${rawReposts.length})`); }
     return added;
   }
-  page.on('response', async response => {
-    const url = response.url();
-    if (!/\/api\/(repost|post|favorite)\/item_list|item_list\/?/.test(url) || !url.includes('repost')) return;
-    try { debug.intercepted++; pushItems(extractItems(await response.json()), 'intercept'); } catch (_) { /* non-JSON response */ }
+  // O navegador faz a request completa sozinho. Nós apenas observamos a
+  // request/response real, incluindo todos os tokens e parâmetros dinâmicos.
+  page.on('request', request => {
+    if (request.url().includes('/api/repost/item_list/')) {
+      debug.requests++;
+      console.log('[repost request]', request.url().split('?')[0]);
+    }
   });
+  page.on('response', response => {
+    if (!response.url().includes('/api/repost/item_list/')) return;
+    const task = (async () => {
+      try {
+        const json = await response.json();
+        debug.intercepted++;
+        latestCursor = json?.cursor ?? latestCursor;
+        latestHasMore = json?.hasMore === true;
+        // A lista vem da resposta criada pelo TikTok; não reconstruímos a URL.
+        pushItems(Array.isArray(json?.itemList) ? json.itemList : extractItems(json), 'browser-response');
+      } catch (_) { /* resposta não JSON ou já consumida */ }
+    })().finally(() => responseTasks.delete(task));
+    responseTasks.add(task);
+  });
+
   try {
     console.log(`A abrir ${profileUrl} ...`);
     await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -147,45 +168,64 @@ async function scrapeReposts(username, keyword, scrollsCount = 2) {
     if (pageState.captcha) throw new Error('O TikTok mostrou um CAPTCHA. Tenta novamente daqui a pouco.');
     if (pageState.private) throw new Error(`A conta @${cleanUsername} e privada, nao da para ler os reposts.`);
 
+    // Fecha popups comuns sem depender de coordenadas do rato.
+    await page.evaluate(() => {
+      const labels = ['Accept all', 'Accept', 'Allow all', 'Fechar', 'Close', 'Agora não', 'Not now'];
+      for (const el of Array.from(document.querySelectorAll('button, [role="button"]'))) {
+        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+        if (labels.some(label => text === label.toLowerCase())) el.click();
+      }
+    });
+
+    // Clica na aba visível como um utilizador; não usa coordenadas nem API.
     const tabClicked = await page.evaluate(() => {
       const words = ['reposts', 'repost', 'republicações', 'republicacoes', 'republicaciones', 'reposteos', 'partilhas', 'reenvios'];
-      for (const el of Array.from(document.querySelectorAll('[role="tab"], [data-e2e*="repost"], p, span, div'))) {
-        const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-        if (txt && txt.length < 24 && words.includes(txt)) { el.click(); const parent = el.closest('[role="tab"], a, button'); if (parent && parent !== el) parent.click(); return txt; }
+      for (const el of Array.from(document.querySelectorAll('[role="tab"], a, button, p, span, div'))) {
+        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+        if (text && text.length < 24 && words.includes(text)) {
+          const target = el.closest('[role="tab"], a, button') || el;
+          target.click();
+          return text;
+        }
       }
       return null;
     });
-    if (tabClicked) { debug.strategies.push(`tab:${tabClicked}`); await waitForItems(() => rawReposts.length, 12000); }
-    else {
-      debug.strategies.push('tab:none');
-      try { await page.goto(`${profileUrl}/repost`, { waitUntil: 'domcontentloaded', timeout: 30000 }); await waitForItems(() => rawReposts.length, 10000); } catch (_) {}
+    if (tabClicked) {
+      debug.strategies.push(`visual-tab:${tabClicked}`);
+      await waitForItems(() => rawReposts.length, 3000, 300);
+    } else {
+      debug.strategies.push('visual-tab:none');
+      // Continua a ser navegação normal do browser, não uma chamada de API.
+      try {
+        await page.goto(`${profileUrl}/repost`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+        await page.waitForTimeout(1800);
+      } catch (_) {}
     }
-    for (let i = 0; i < scrollsCount; i++) {
+
+    // Paginação natural: scroll/mouse wheel faz o próprio TikTok pedir a
+    // página seguinte. O cursor e hasMore são lidos apenas da resposta real.
+    const maxScrolls = Math.min(Math.max(Number(scrollsCount) || 2, 1), 8);
+    let unchanged = 0;
+    for (let i = 0; i < maxScrolls && (i === 0 || latestHasMore); i++) {
       const before = rawReposts.length;
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await page.waitForTimeout(1200 + Math.floor(Math.random() * 1200));
-      await waitForItems(() => rawReposts.length, 6000);
-      if (rawReposts.length === before && i > 0) break;
+      await page.mouse.wheel(0, 1400);
+      await page.waitForTimeout(1500);
+      await waitForItems(() => rawReposts.length, 2500, 300);
+      await Promise.allSettled([...responseTasks]);
+      if (rawReposts.length === before) unchanged++; else unchanged = 0;
+      if (unchanged >= 2 || (!latestHasMore && rawReposts.length === before)) break;
     }
-    if (rawReposts.length === 0 && secUid) {
-      const apiItems = await page.evaluate(async sec => {
-        const collected = []; let cursor = 0;
-        for (let p = 0; p < 3; p++) {
-          const qs = new URLSearchParams({ aid: '1988', app_language: 'en', app_name: 'tiktok_web', browser_language: navigator.language, browser_name: 'Mozilla', browser_platform: navigator.platform, browser_version: navigator.userAgent, channel: 'tiktok_web', cookie_enabled: 'true', count: '30', cursor: String(cursor), device_platform: 'web_pc', language: 'en', os: 'linux', region: 'PT', screen_height: String(screen.height), screen_width: String(screen.width), secUid: sec, tz_name: 'Europe/Lisbon' });
-          try { const response = await fetch(`/api/repost/item_list/?${qs}`, { credentials: 'include', headers: { Referer: location.href } }); const json = await response.json(); const list = json.itemList || json.items || json.aweme_list || []; collected.push(...list); if (!json.hasMore || !list.length) break; cursor = json.cursor || cursor + 30; } catch (_) { break; }
-          await new Promise(resolve => setTimeout(resolve, 600));
-        }
-        return collected;
-      }, secUid);
-      pushItems(apiItems, 'api-direct');
-    }
+    await Promise.allSettled([...responseTasks]);
+
+    // Último recurso: ler os cartões renderizados no DOM, sem endpoint.
     if (rawReposts.length === 0) {
       const domItems = await page.evaluate(() => Array.from(document.querySelectorAll('a[href*="/video/"]')).map(a => {
         const match = (a.getAttribute('href') || '').match(/@([\w.-]+)\/video\/(\d+)/); if (!match) return null;
-        const container = a.closest('div[class*="DivItemContainer"], div[data-e2e*="item"]') || a.parentElement; const img = container?.querySelector('img'); const cap = container?.querySelector('[data-e2e*="desc"], [class*="Desc"]');
+        const container = a.closest('div[class*="DivItemContainer"], div[data-e2e*="item"], article') || a.parentElement;
+        const img = container?.querySelector('img'); const cap = container?.querySelector('[data-e2e*="desc"], [class*="Desc"], [class*="desc"]');
         return { id: match[2], desc: cap?.textContent.trim() || img?.getAttribute('alt') || '', author: { uniqueId: match[1] }, video: { cover: img?.getAttribute('src') || '' }, stats: {} };
       }).filter(Boolean));
-      pushItems(domItems, 'dom-fallback');
+      pushItems(domItems, 'dom-visible');
     }
   } catch (error) { console.error('Erro de scraping:', error.message); if (!rawReposts.length) throw error; }
   finally { await context.close().catch(() => {}); }
