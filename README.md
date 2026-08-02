@@ -2,54 +2,49 @@
 
 Encontra reposts no TikTok de qualquer perfil, filtrando por palavra-chave.
 
-## Deploy no Render (GRATIS)
-
-1. Cria conta em [render.com](https://render.com) (gratis)
-2. New Web Service -> Build and deploy from a Git repository
-3. Cola o link do teu GitHub repo
-4. Render detecta o `Dockerfile` automaticamente
-5. Clica Create Web Service
-6. Espera 5-10 minutos (instala o Playwright)
-
-## Funcionalidades
-
-- Interface web moderna e responsiva
-- Pesquisa por username + palavra-chave
-- Detecao de reposts (descricoes similares)
-- Resultados em tempo real com barra de progresso
-- Blindado: user-agents rotativos, stealth mode, delays aleatorios
-
 ## Stack
 
-- **Backend**: Flask + Playwright + Playwright-Stealth
-- **Frontend**: HTML/CSS/JS puro
+- **Backend**: Node.js + Express + Playwright (Chromium)
+- **Frontend**: HTML/CSS/JS puro (`public/index.html`)
 - **Hosting**: Render (Docker)
 
-## Variaveis de Ambiente (opcional)
+## Correr localmente
 
-| Variavel | Descricao | Exemplo |
+```bash
+npm install
+npx playwright install --with-deps chromium
+npm start
+# abre http://localhost:3000
+```
+
+## Deploy no Render
+
+1. New Web Service -> Build and deploy from a Git repository
+2. Cola o link deste repo
+3. Render deteta o `Dockerfile` (base `mcr.microsoft.com/playwright`, ja traz o Chromium)
+4. Create Web Service e espera pelo build
+
+O `render.yaml` ja define plano free, `PORT=3000` e health check em `/health`.
+
+## Endpoints
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| `POST` | `/api/fetch-reposts` | Body: `{ "username": "khaby.lame", "keyword": "love", "scrolls": 2 }` |
+| `GET`  | `/api/download?url=...` | Download do video sem marca de agua (via tikwm) |
+| `GET`  | `/health` | Health check |
+
+## Variaveis de ambiente
+
+| Variavel | Descricao | Default |
 |----------|-----------|---------|
-| `SECRET_KEY` | Chave secreta Flask | `minha-chave-secreta` |
-| `PROXIES` | Lista de proxies (virgula) | `http://proxy1:8080` |
-
-## Como Usar
-
-1. Abre o site (Render da-te um link tipo `iloverepost.onrender.com`)
-2. Coloca o username do TikTok (ex: `khaby.lame`)
-3. Coloca a palavra-chave (ex: `love`)
-4. Clica em "Procurar Reposts"
-5. Espera a barra de progresso
-6. Ve os reposts encontrados!
+| `PORT` | Porta do servidor | `3000` |
 
 ## Aviso
 
-O TikTok bloqueia scraping. Esta ferramenta usa:
-- Stealth mode (esconde que e bot)
-- User-agents rotativos
-- Delays aleatorios
-- Proxy support
-
-Mas se o TikTok mudar o layout ou reforcar anti-bot, pode parar de funcionar.
+O TikTok bloqueia scraping. Se mudarem o layout ou reforcarem o anti-bot,
+a ferramenta pode deixar de funcionar. No plano free do Render o servico
+adormece por inatividade e o primeiro pedido demora mais.
 
 ## Licenca
 

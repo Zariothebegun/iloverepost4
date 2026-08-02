@@ -302,6 +302,23 @@ app.get('/health', (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`iLoveRepost running on http://localhost:${PORT}`);
 });
+
+// Graceful shutdown (importante no Render)
+async function shutdown(signal) {
+  console.log(`Received ${signal}, shutting down...`);
+  try {
+    if (browserInstance && browserInstance.isConnected()) {
+      await browserInstance.close();
+    }
+  } catch (e) {
+    console.error('Error closing browser:', e.message);
+  }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
