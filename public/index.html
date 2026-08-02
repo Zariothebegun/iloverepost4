@@ -211,7 +211,7 @@
         <i class="fa-solid fa-folder-open"></i>
       </div>
       <h3 class="text-lg font-bold text-white mb-2">Nenhum repost encontrado</h3>
-      <p class="text-sm text-slate-400">Este utilizador nao tem reposts visiveis ou nenhum coincide com a palavra-chave.</p>
+      <p id="emptyStateMsg" class="text-sm text-slate-400">Este utilizador nao tem reposts visiveis ou nenhum coincide com a palavra-chave.</p>
     </section>
 
     <section id="repostsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-16 hidden">
@@ -268,6 +268,7 @@
 
   <script>
     let allReposts = [];
+    let lastTotalFound = 0;
     let currentProfile = null;
 
     const fetchForm = document.getElementById('fetchForm');
@@ -395,10 +396,22 @@
 
         allReposts = data.items || [];
         currentProfile = data.user;
+        lastTotalFound = typeof data.totalFound === 'number' ? data.totalFound : allReposts.length;
+        console.log('[iLoveRepost] estrategias:', data.debug);
 
         renderProfile(data.user);
 
         if (allReposts.length === 0) {
+          const msgEl = document.getElementById('emptyStateMsg');
+          if (msgEl) {
+            if (lastTotalFound > 0 && keyword) {
+              msgEl.innerHTML = `Encontrei <strong class="text-white">${lastTotalFound}</strong> reposts neste perfil, mas nenhum contem <strong class="text-white">"${keyword}"</strong>. Tenta outra palavra ou deixa o campo vazio para veres todos.`;
+            } else if (lastTotalFound === 0) {
+              msgEl.innerHTML = 'Nao consegui ler reposts deste perfil.<br>Pode nao ter reposts publicos, ou o TikTok bloqueou o pedido &mdash; tenta outra vez daqui a bocado, ou aumenta o numero de scrolls.';
+            } else {
+              msgEl.textContent = 'Este utilizador nao tem reposts visiveis ou nenhum coincide com a palavra-chave.';
+            }
+          }
           emptyState.classList.remove('hidden');
         } else {
           repostsGrid.classList.remove('hidden');
