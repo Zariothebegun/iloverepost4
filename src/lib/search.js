@@ -1,6 +1,6 @@
 import { getPlanDetails } from "./plans.js";
 import { getUserState, recordSearch } from "./session-store.js";
-import { searchTikTokProfile } from "./tiktok.js";
+import { searchTikTokProfile, searchTikTokStories } from "./tiktok.js";
 
 export async function executeSearch({ session, username, contentType, keyword, cursor, count }) {
   const plan = getPlanDetails(session.plan);
@@ -30,6 +30,34 @@ export async function executeSearch({ session, username, contentType, keyword, c
   const nextCursor = result?.pagination?.cursor ?? String(safeCursor);
   console.log(
     `[ILOVEREPOST] Fetched ${fetchedCount} videos from TikTok (cursor ${nextCursor}) ` +
+      `[pages=${result?.debug?.pagesFetched ?? 0}/${pagesToFetch}] username=${username.replace(/^@+/, "")}`
+  );
+
+  recordSearch(session);
+
+  return {
+    ...result,
+    account: getUserState(session)
+  };
+}
+
+export async function executeStorySearch({ session, username, cursor, count }) {
+  const plan = getPlanDetails(session.plan);
+  const safeCursor = Number.isFinite(cursor) && cursor >= 0 ? cursor : 0;
+  const pagesToFetch = safeCursor > 0 ? plan.loadMorePageRequests || 3 : plan.initialPageRequests || 3;
+  const safeCount = Math.min(Math.max(Number(count) || plan.pageSize, 1), plan.pageSize);
+
+  const result = await searchTikTokStories({
+    username,
+    cursor: safeCursor,
+    count: safeCount,
+    pagesToFetch
+  });
+
+  const fetchedCount = result?.debug?.fetchedVideoCount ?? 0;
+  const nextCursor = result?.pagination?.cursor ?? String(safeCursor);
+  console.log(
+    `[ILOVEREPOST] Fetched ${fetchedCount} stories from TikTok (cursor ${nextCursor}) ` +
       `[pages=${result?.debug?.pagesFetched ?? 0}/${pagesToFetch}] username=${username.replace(/^@+/, "")}`
   );
 

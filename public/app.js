@@ -1,17 +1,16 @@
 const state = {
-  plan: "standard",
+  activeTab: "reposts",
   nextCursor: "0",
   resultIds: new Set(),
   activeSearchKey: ""
 };
 
-const DEFAULT_VIDEOS_PER_CLICK = 60;
+const DEFAULT_VIDEOS_PER_CLICK = 120;
 const DEFAULT_REQUEST_COUNT = 20;
 
 const dom = {
   form: document.getElementById("search-form"),
   username: document.getElementById("username"),
-  keyword: document.getElementById("keyword"),
   searchButton: document.getElementById("search-button"),
   statusCard: document.getElementById("status-card"),
   profileCard: document.getElementById("profile-card"),
@@ -22,15 +21,24 @@ const dom = {
   loadMore: document.getElementById("load-more"),
   resultsTitle: document.getElementById("results-title"),
   resultTemplate: document.getElementById("result-card-template"),
-  accountSummary: document.getElementById("account-summary")
+  storyTemplate: document.getElementById("story-card-template"),
+  tabsBar: document.getElementById("tabs-bar")
 };
+
+/* ─── Helpers ─── */
 
 function formatCount(value) {
   const number = Number(value || 0);
-
   if (number >= 1_000_000) return `${(number / 1_000_000).toFixed(1)}M`;
   if (number >= 1_000) return `${(number / 1_000).toFixed(1)}K`;
   return String(number);
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return "";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
 }
 
 function setStatus(message, tone = "") {
@@ -44,41 +52,44 @@ async function apiFetch(url, options = {}) {
 
 function getReadableError(error, fallbackMessage) {
   if (error?.message === "Failed to fetch") {
-    return "The local server is offline. Start the backend on localhost:3000 and try again.";
+    return "The server is offline. Start the backend and try again.";
   }
-
   return error?.message || fallbackMessage;
 }
 
-function getVideosPerClick({ isLoadMore = false } = {}) {
-  const pageSize = DEFAULT_REQUEST_COUNT;
-  const pages = isLoadMore ? 6 : 6;
-  const computed = pageSize * pages;
-  return Number.isFinite(computed) && computed > 0 ? computed : DEFAULT_VIDEOS_PER_CLICK;
+function getSearchKey(username) {
+  return `${state.activeTab}::${username.toLowerCase()}`;
 }
 
-function getRequestCount() {
-  return DEFAULT_REQUEST_COUNT;
-}
+/* ─── Tabs ─── */
 
-function updateAccountUi() {
-  syncDownloadButtons();
-}
+dom.tabsBar.addEventListener("click", (event) => {
+  const button = event.target.closest(".tab-button");
+  if (!button) return;
 
-function renderProfile(profile) {
-  dom.profileAvatar.src =
-    profile.avatar || "https://via.placeholder.com/112x112.png?text=TT";
-  dom.profileAvatar.alt = `${profile.username} avatar`;
-  dom.profileName.textContent = `@${profile.username}${profile.verified ? " - verified" : ""}`;
-  dom.profileMeta.textContent = `${formatCount(profile.followerCount)} followers - ${formatCount(
-    profile.videoCount
-  )} videos`;
-  dom.profileCard.hidden = false;
-}
+  const tab = button.dataset.tab;
+  if (tab === state.activeTab) return;
 
-function getSearchKey(username, keyword) {
-  return `${username.toLowerCase()}::${keyword.toLowerCase()}`;
-}
+  state.activeTab = tab;
+
+  for (const btn of dom.tabsBar.querySelectorAll(".tab-button")) {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  }
+
+  // Reset results
+  dom.resultsGrid.innerHTML = "";
+  state.resultIds.clear();
+  state.activeSearchKey = "";
+  dom.profileCard.hidden = true;
+  dom.loadMore.hidden = true;
+  dom.resultsTitle.textContent = tab === "stories" ? "TikTok stories" : "TikTok videos";
+  setStatus(tab === "stories"
+    ? "Enter a TikTok username to search stories."
+    : "Enter a TikTok username to search reposts."
+  );
+});
+
+/* ─── Download ─── */
 
 async function handleDownload(item) {
   const response = await apiFetch(
@@ -92,67 +103,80 @@ async function handleDownload(item) {
 
   const anchor = document.createElement("a");
   anchor.href = payload.downloadUrl;
-  anchor.download = payload.filename || "repost-video.mp4";
+  anchor.download = payload.filename || "tiktok-video.mp4";
   anchor.target = "_blank";
   anchor.rel = "noopener noreferrer";
   anchor.click();
 }
 
-function syncDownloadButtons() {
-  const buttons = document.querySelectorAll(".download-video");
+/* ─── Rendering ─── */
 
-  for (const button of buttons) {
-    button.textContent = "Download Video";
-    button.setAttribute("aria-label", "Download Video");
-  }
+function renderProfile(profile) {
+  dom.profileAvatar.src = profile.avatar || "https://via.placeholder.com/112x112.png?text=TT";
+  dom.profileAvatar.alt = `${profile.username} avatar`;
+  dom.profileName.textContent = `@${profile.username}${profile.verified ? " — verified" : ""}`;
+  dom.profileMeta.textContent = `${formatCount(profile.followerCount)} followers · ${formatCount(profile.videoCount)} videos`;
+  dom.profileCard.hidden = false;
 }
 
-function createResultCard(item) {
-  const node = dom.resultTemplate.content.firstElementChild.cloneNode(true);
+function createCard(item, isStory) {
+  const template = isStory ? dom.storyTemplate : dom.resultTemplate;
+  const node = template.content.firstElementChild.cloneNode(true);
   const image = node.querySelector(".thumb");
   const caption = node.querySelector(".result-caption");
   const author = node.querySelector(".result-author");
   const likes = node.querySelector(".meta-likes");
   const link = node.querySelector(".open-video");
   const downloadButton = node.querySelector(".download-video");
+  const durationEl = node.querySelector(".duration-text");
 
   image.src = item.thumbnail || "https://via.placeholder.com/720x720.png?text=No+Thumbnail";
   image.alt = item.caption || `TikTok video ${item.videoId}`;
-  caption.textContent = item.caption || "No caption available for this video.";
+  caption.textContent = item.caption || "No caption available.";
   author.textContent = `@${item.author || "unknown"}`;
   likes.textContent = `${formatCount(item.likes)} likes`;
   link.href = item.videoUrl;
-  downloadButton.textContent = "Download Video";
+
+  const duration = formatDuration(item.duration);
+  if (duration && durationEl) {
+    durationEl.textContent = duration;
+  } else if (durationEl) {
+    durationEl.hidden = true;
+  }
+
   downloadButton.addEventListener("click", async () => {
+    const original = downloadButton.textContent;
+    downloadButton.textContent = "Downloading…";
+    downloadButton.disabled = true;
     try {
       await handleDownload(item);
     } catch (error) {
       setStatus(error.message, "error");
+    } finally {
+      downloadButton.textContent = original;
+      downloadButton.disabled = false;
     }
   });
 
   return node;
 }
 
-function renderItems(items, { append = false } = {}) {
+function renderItems(items, { append = false, isStory = false } = {}) {
   if (!append) {
     dom.resultsGrid.innerHTML = "";
     state.resultIds.clear();
   }
 
   if (!items.length && !append) {
-    setStatus("No matching videos were found for this search.", "error");
+    setStatus(isStory ? "No stories found for this user." : "No matching videos found.", "error");
     return;
   }
 
   const fragment = document.createDocumentFragment();
   for (const item of items) {
-    if (state.resultIds.has(item.videoId)) {
-      continue;
-    }
-
+    if (state.resultIds.has(item.videoId)) continue;
     state.resultIds.add(item.videoId);
-    fragment.appendChild(createResultCard(item));
+    fragment.appendChild(createCard(item, isStory));
   }
 
   dom.resultsGrid.appendChild(fragment);
@@ -160,31 +184,25 @@ function renderItems(items, { append = false } = {}) {
 
 function logSearchDebug(payload) {
   const fetchedCount = payload?.debug?.fetchedVideoCount ?? payload?.items?.length ?? 0;
-  const rawFetchedCount = payload?.debug?.rawFetchedVideoCount ?? fetchedCount;
   const nextCursor = payload?.pagination?.cursor ?? "0";
-  const pagesFetched = payload?.debug?.pagesFetched ?? 1;
-
   console.log(
-    `[ILOVEREPOST] Fetched ${fetchedCount} videos from TikTok (cursor ${nextCursor})`,
+    `[ILOVEREPOST] Fetched ${fetchedCount} items (cursor ${nextCursor})`,
     {
-      pagesFetched,
-      rawFetchedCount,
-      filteredOutCount: payload?.debug?.filteredOutCount ?? 0,
+      pagesFetched: payload?.debug?.pagesFetched ?? 1,
       hasMore: payload?.pagination?.hasMore ?? false,
-      username: payload?.user?.username ?? ""
+      tab: state.activeTab
     }
   );
 }
 
-
+/* ─── Search ─── */
 
 async function performSearch({ append = false } = {}) {
   const username = dom.username.value.trim().replace(/^@+/, "");
-  const keyword = dom.keyword.value.trim();
-  const searchKey = getSearchKey(username, keyword);
+  const searchKey = getSearchKey(username);
   const shouldAppend = append && state.activeSearchKey === searchKey;
   const cursor = shouldAppend ? state.nextCursor : "0";
-  const count = getRequestCount();
+  const isStory = state.activeTab === "stories";
 
   if (!username) {
     setStatus("Please enter a TikTok username.", "error");
@@ -193,23 +211,19 @@ async function performSearch({ append = false } = {}) {
 
   dom.searchButton.disabled = true;
   dom.loadMore.disabled = true;
-  dom.resultsTitle.textContent = "Reposted videos";
-  const videosPerClick = getVideosPerClick({ isLoadMore: shouldAppend });
-  setStatus(`Searching reposts for @${username} (${videosPerClick} videos per click)...`);
+  dom.resultsTitle.textContent = isStory ? "TikTok stories" : "TikTok videos";
+
+  const endpoint = isStory ? "stories" : "reposts";
+  setStatus(`Searching ${endpoint} for @${username}…`);
 
   const requestUrl =
-    `/api/reposts?username=${encodeURIComponent(username)}` +
-    `&keyword=${encodeURIComponent(keyword)}` +
+    `/api/${endpoint}?username=${encodeURIComponent(username)}` +
     `&cursor=${encodeURIComponent(cursor)}` +
-    `&count=${encodeURIComponent(count)}`;
+    `&count=${encodeURIComponent(DEFAULT_REQUEST_COUNT)}`;
 
   try {
     const response = await apiFetch(requestUrl);
     const payload = await response.json();
-
-    if (payload.account) {
-      updateAccountUi(payload.account);
-    }
 
     if (!response.ok) {
       throw new Error(payload.error || "Request failed.");
@@ -219,11 +233,11 @@ async function performSearch({ append = false } = {}) {
     state.nextCursor = payload.pagination.cursor;
     logSearchDebug(payload);
     renderProfile(payload.user);
-    renderItems(payload.items, { append: shouldAppend });
+    renderItems(payload.items, { append: shouldAppend, isStory });
 
-    const keywordMessage = keyword ? ` matching "${keyword}"` : "";
+    const loadedCount = payload.items.length;
     setStatus(
-      `Loaded ${payload.items.length} reposts${keywordMessage} for @${payload.user.username}.`,
+      `Loaded ${loadedCount} ${isStory ? "stories" : "reposts"} for @${payload.user.username}.`,
       "success"
     );
 
@@ -235,6 +249,8 @@ async function performSearch({ append = false } = {}) {
     dom.searchButton.disabled = false;
   }
 }
+
+/* ─── Events ─── */
 
 dom.form.addEventListener("submit", async (event) => {
   event.preventDefault();

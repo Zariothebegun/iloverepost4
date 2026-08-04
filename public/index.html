@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ILOVEREPOST - Discover TikTok Reposts</title>
+    <title>ILOVEREPOST - Discover TikTok Reposts & Stories</title>
     <meta
       name="description"
-      content="Search reposted videos from TikTok profiles."
+      content="Anonymously search reposted videos and stories from any public TikTok profile."
     />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -18,21 +18,25 @@
           <span>ILOVEREPOST</span>
         </a>
         <nav class="header-actions">
+          <span class="header-badge">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM3 13c0-2.5 2-4 5-4s5 1.5 5 4"/></svg>
+            Anonymous
+          </span>
         </nav>
       </div>
     </header>
 
     <main>
       <section class="hero">
-        <div class="hero-gradient"></div>
         <div class="container hero-inner">
           <div class="hero-badge">Discover hidden TikTok activity</div>
           <h1>
-            Discover reposts of any
+            Discover reposts &amp; stories of any
             <span>public TikTok profile</span>
           </h1>
           <p>
-            Search by username and filter reposted videos by any keyword in the caption or description.
+            Search by username. Filter by keyword. Download videos.
+            100% anonymous — no login required.
           </p>
           <div class="hero-actions">
             <a class="primary-button" href="#search">Get Started</a>
@@ -43,24 +47,25 @@
       <section class="search-section" id="search">
         <div class="container">
           <form class="search-card" id="search-form">
+            <div class="tabs-bar" id="tabs-bar">
+              <button class="tab-button active" data-tab="reposts" type="button">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M6 6h4M6 8h4M6 10h2"/></svg>
+                Reposts
+              </button>
+              <button class="tab-button" data-tab="stories" type="button">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M6.5 6.5 10 8l-3.5 1.5V6.5Z"/></svg>
+                Stories
+              </button>
+            </div>
+
             <div class="field-grid">
               <label class="field">
-                <span>TikTok Username</span>
+                <span class="field-label">TikTok Username</span>
                 <input id="username" name="username" type="text" placeholder="@username" required />
               </label>
 
-              <label class="field">
-                <span>Search Type</span>
-                <input type="text" value="Reposts only" disabled />
-              </label>
-
-              <label class="field">
-                <span>Keyword (optional)</span>
-                <input id="keyword" name="keyword" type="text" placeholder="Filter by keyword..." />
-              </label>
-
-              <div class="field action-field">
-                <span>&nbsp;</span>
+              <div class="field">
+                <span class="field-label">&nbsp;</span>
                 <button class="primary-button search-button" id="search-button" type="submit">
                   Search
                 </button>
@@ -68,7 +73,11 @@
             </div>
 
             <div class="helper-row">
-              <span id="account-summary">Reposts only</span>
+              <span class="anon-badge">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4Z"/><circle cx="8" cy="8" r="1.5"/></svg>
+                100% Anonymous
+              </span>
+              <span id="account-summary">Reposts &amp; stories — no limits</span>
             </div>
           </form>
         </div>
@@ -82,11 +91,10 @@
                 <p class="section-kicker">Search results</p>
                 <h2 id="results-title">TikTok videos</h2>
               </div>
-              <button class="outline-button" id="load-more" type="button" hidden>Load More</button>
             </div>
 
             <div class="status-card" id="status-card">
-              Enter a TikTok username to search reposted videos.
+              Enter a TikTok username to search reposts and stories.
             </div>
 
             <div class="profile-card" id="profile-card" hidden>
@@ -98,11 +106,13 @@
             </div>
 
             <div class="results-grid" id="results-grid"></div>
+
+            <div class="load-more-wrap">
+              <button class="outline-button" id="load-more" type="button" hidden>Load More</button>
+            </div>
           </div>
         </div>
       </section>
-
-
     </main>
 
     <footer class="site-footer">
@@ -115,10 +125,12 @@
       </div>
     </footer>
 
+    <!-- Repost card template -->
     <template id="result-card-template">
       <article class="result-card">
         <div class="thumb-wrap">
           <img class="thumb" alt="" />
+          <span class="duration-badge duration-text"></span>
         </div>
         <div class="result-content">
           <p class="result-caption"></p>
@@ -126,8 +138,30 @@
           <div class="result-meta">
             <span class="meta-pill meta-likes"></span>
             <div class="result-actions">
-              <button class="ghost-button download-video" type="button">Download Video</button>
-              <a class="ghost-button open-video" target="_blank" rel="noopener noreferrer">View on TikTok</a>
+              <button class="ghost-button download-video" type="button">Download</button>
+              <a class="ghost-button open-video" target="_blank" rel="noopener noreferrer">View</a>
+            </div>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <!-- Story card template -->
+    <template id="story-card-template">
+      <article class="result-card">
+        <div class="thumb-wrap">
+          <img class="thumb" alt="" />
+          <span class="story-badge-card">Story</span>
+          <span class="duration-badge duration-text"></span>
+        </div>
+        <div class="result-content">
+          <p class="result-caption"></p>
+          <p class="result-author"></p>
+          <div class="result-meta">
+            <span class="meta-pill meta-likes"></span>
+            <div class="result-actions">
+              <button class="ghost-button download-video" type="button">Download</button>
+              <a class="ghost-button open-video" target="_blank" rel="noopener noreferrer">View</a>
             </div>
           </div>
         </div>
