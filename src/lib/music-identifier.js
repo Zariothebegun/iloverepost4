@@ -1,133 +1,101 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { rm } from "node:fs/promises";
+import { SimpleCookieJar } from "./cookie-jar.js";
 
-const execFileAsync = promisify(execFile);
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 
-const AUDD_TOKEN = "e16e8157711e6e81397bf5a255ffd31a";
-const AUDD_API = "https://api.audd.io/";
+const UNIVERSAL_DATA_PATTERN =
+  /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">([\s\S]*?)<\/script>/;
 
-function extractSpotifyId(url) {
-  if (!url) return null;
-  const m = url.match(/track\/([a-zA-Z0-9]+)/);
-  return m ? m[1] : null;
+function safeString(v) {
+  return typeof v === "string" ? v : "";
 }
 
-async function getMetadataFromYtDlp(url) {
-  try {
-    const { stdout } = await execFileAsync("yt-dlp", [
-      "--dump-json",
-      "--no-download",
-      "--no-warnings",
-      url
-    ], { timeout: 25000 });
-
-    const data = JSON.parse(stdout);
-    const track = data.track || null;
-    const artist = data.artist || null;
-
-    return {
-      found: Boolean(track),
-      track,
-      artist,
-      album: data.album || null,
-      thumbnail: data.thumbnail || null,
-      duration: data.duration || null,
-      title: data.title || null
-    };
-  } catch {
-    return { found: false };
-  }
-}
-
-async function identifyWithAudD(url) {
-  const body = new URLSearchParams({
-    api_token: AUDD_TOKEN,
-    url: url,
-    return: "spotify,apple_music,deezer"
-  });
-
-  const response = await fetch(AUDD_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-    signal: AbortSignal.timeout(30000)
-  });
-
-  const data = await response.json();
-
-  if (data.status === "success" && data.result) {
-    const r = data.result;
-    return {
-      found: true,
-      track: r.title || null,
-      artist: r.artist || null,
-      album: r.album || null,
-      thumbnail: r.spotify?.album?.images?.[0]?.url || r.song_link || null,
-      spotify: r.spotify?.external_urls?.spotify || null,
-      appleMusic: r.apple_music?.url || null,
-      deezer: r.deezer?.link || null,
-      songLink: r.song_link || null
-    };
-  }
-
-  return { found: false };
-}
-
-function buildSpotifySearchUrl(track, artist) {
+function buildSearchUrl(platform, track, artist) {
   const q = encodeURIComponent(`${track} ${artist}`);
-  return `https://open.spotify.com/search/${q}`;
-}
-
-function buildYouTubeSearchUrl(track, artist) {
-  const q = encodeURIComponent(`${track} ${artist}`);
-  return `https://www.youtube.com/results?search_query=${q}`;
-}
-
-function buildSoundCloudSearchUrl(track, artist) {
-  const q = encodeURIComponent(`${track} ${artist}`);
-  return `https://soundcloud.com/search?q=${q}`;
+  const urls = {
+    spotify: `https://open.spotify.com/search/${q}`,
+    youtube: `https://www.youtube.com/results?search_query=${q}`,
+    soundcloud: `https://soundcloud.com/search?q=${q}`,
+    appleMusic: `https://music.apple.com/search?term=${q}`,
+    deezer: `https://www.deezer.com/search/${q}`
+  };
+  return urls[platform] || null;
 }
 
 export async function identifyMusic(tiktokUrl) {
-  // Step 1: try TikTok metadata
-  const meta = await getMetadataFromYtDlp(tiktokUrl);
+  const cookieJar = new SimpleCookieJar();
 
-  if (meta.found) {
+  const response = await fetch(tiktokUrl, {
+    headers: {
+      "user-agent": USER_AGENT,
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9"
+    },
+    signal: AbortSignal.timeout(20000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`TikTok returned ${response.status}`);
+  }
+
+  const html = await response.text();
+  const match = html.match(UNIVERSAL_DATA_PATTERN);
+
+  if (!match) {
+    throw new Error("Could not find video data on this page.");
+  }
+
+  let data;
+  try {
+    data = JSON.parse(match[1]);
+  } catch {
+    throw new Error("Could not parse video data.");
+  }
+
+  const scope = data?.__DEFAULT_SCOPE__ ?? {};
+
+  // Try video-detail path
+  const videoDetail =
+    scope["webapp.video-detail"]?.itemInfo?.itemStruct ||
+    scope["webapp.video-detail"]?.itemInfo?.itemInfo?.itemStruct ||
+    null;
+
+  if (!videoDetail) {
+    throw new Error("This does not appear to be a valid TikTok video URL.");
+  }
+
+  const music = videoDetail.music || {};
+  const author = videoDetail.author || {};
+
+  const track = safeString(music.title);
+  const artist = safeString(music.authorName) || safeString(author.uniqueId);
+  const album = safeString(music.album) || "";
+  const cover = safeString(music.coverLarge) || safeString(music.coverMedium) || safeString(music.cover) || "";
+  const musicUrl = safeString(music.playUrl);
+  const duration = music.duration || videoDetail.video?.duration || 0;
+
+  if (!track && !artist) {
     return {
-      source: "tiktok_metadata",
-      track: meta.track,
-      artist: meta.artist,
-      album: meta.album,
-      thumbnail: meta.thumbnail,
-      duration: meta.duration,
-      links: {
-        spotify: buildSpotifySearchUrl(meta.track, meta.artist),
-        youtube: buildYouTubeSearchUrl(meta.track, meta.artist),
-        soundcloud: buildSoundCloudSearchUrl(meta.track, meta.artist)
-      }
+      found: false,
+      error: "No music information found in this video."
     };
   }
 
-  // Step 2: try AudD
-  const audd = await identifyWithAudD(tiktokUrl);
-
-  if (audd.found) {
-    return {
-      source: "audd_api",
-      track: audd.track,
-      artist: audd.artist,
-      album: audd.album,
-      thumbnail: audd.thumbnail,
-      links: {
-        spotify: audd.spotify || buildSpotifySearchUrl(audd.track, audd.artist),
-        appleMusic: audd.appleMusic || null,
-        deezer: audd.deezer || null,
-        youtube: buildYouTubeSearchUrl(audd.track, audd.artist),
-        soundcloud: buildSoundCloudSearchUrl(audd.track, audd.artist)
-      }
-    };
-  }
-
-  return { found: false, error: "Could not identify the music from this video." };
+  return {
+    found: true,
+    source: "tiktok_metadata",
+    track: track || "Unknown Track",
+    artist: artist || "Unknown Artist",
+    album,
+    thumbnail: cover,
+    duration,
+    musicUrl,
+    links: {
+      spotify: buildSearchUrl("spotify", track || artist, artist),
+      youtube: buildSearchUrl("youtube", track || artist, artist),
+      soundcloud: buildSearchUrl("soundcloud", track || artist, artist),
+      appleMusic: buildSearchUrl("appleMusic", track || artist, artist),
+      deezer: buildSearchUrl("deezer", track || artist, artist)
+    }
+  };
 }

@@ -358,7 +358,7 @@ async function identifyMusic() {
           <p class="artist">${data.artist || "Unknown Artist"}</p>
           ${data.album ? `<p class="album">${data.album}</p>` : ""}
           <div class="music-links">${linksHtml}</div>
-          <p class="music-limit">Found via ${data.source === "audd_api" ? "AudD audio recognition" : "TikTok metadata"}</p>
+          <p class="music-limit">Found via TikTok video metadata</p>
         </div>
       </div>`;
 
