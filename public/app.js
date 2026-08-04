@@ -1,18 +1,14 @@
 const state = {
-  plan: "free",
-  preferredPlan: window.localStorage.getItem("ilr_plan") || "free",
+  plan: "standard",
   nextCursor: "0",
   resultIds: new Set(),
-  activeSearchKey: "",
-  plans: {}
+  activeSearchKey: ""
 };
 
 const DEFAULT_VIDEOS_PER_CLICK = 60;
 const DEFAULT_REQUEST_COUNT = 20;
 
 const dom = {
-  dismissBanner: document.getElementById("dismiss-banner"),
-  topBanner: document.getElementById("top-banner"),
   form: document.getElementById("search-form"),
   username: document.getElementById("username"),
   keyword: document.getElementById("keyword"),
@@ -26,11 +22,7 @@ const dom = {
   loadMore: document.getElementById("load-more"),
   resultsTitle: document.getElementById("results-title"),
   resultTemplate: document.getElementById("result-card-template"),
-  planPill: document.getElementById("plan-pill"),
-  accountSummary: document.getElementById("account-summary"),
-  quickPlanToggle: document.getElementById("quick-plan-toggle"),
-  proPlanButton: document.getElementById("pro-plan-button"),
-  freePlanButton: document.getElementById("free-plan-button")
+  accountSummary: document.getElementById("account-summary")
 };
 
 function formatCount(value) {
@@ -47,13 +39,7 @@ function setStatus(message, tone = "") {
 }
 
 async function apiFetch(url, options = {}) {
-  const headers = new Headers(options.headers || {});
-  headers.set("x-ilr-plan", state.preferredPlan || state.plan || "free");
-
-  return fetch(url, {
-    ...options,
-    headers
-  });
+  return fetch(url, options);
 }
 
 function getReadableError(error, fallbackMessage) {
@@ -64,47 +50,18 @@ function getReadableError(error, fallbackMessage) {
   return error?.message || fallbackMessage;
 }
 
-function getPlanDetails(planId) {
-  return state.plans?.[planId] || {};
-}
-
-function getVideosPerClick(planId, { isLoadMore = false } = {}) {
-  const plan = getPlanDetails(planId);
-  const pageSize = Number(plan.pageSize) || DEFAULT_REQUEST_COUNT;
-  const pages = Number(isLoadMore ? plan.loadMorePageRequests : plan.initialPageRequests) || 3;
+function getVideosPerClick({ isLoadMore = false } = {}) {
+  const pageSize = DEFAULT_REQUEST_COUNT;
+  const pages = isLoadMore ? 6 : 6;
   const computed = pageSize * pages;
   return Number.isFinite(computed) && computed > 0 ? computed : DEFAULT_VIDEOS_PER_CLICK;
 }
 
-function getRequestCount(planId) {
-  const plan = getPlanDetails(planId);
-  return Number(plan.pageSize) || DEFAULT_REQUEST_COUNT;
+function getRequestCount() {
+  return DEFAULT_REQUEST_COUNT;
 }
 
-function updateAccountUi(account) {
-  state.plan = account.plan || "free";
-  state.preferredPlan = state.plan;
-  window.localStorage.setItem("ilr_plan", state.preferredPlan);
-  dom.planPill.textContent = state.plan.toUpperCase();
-  dom.topBanner.hidden = state.plan === "pro";
-  dom.quickPlanToggle.textContent = state.plan === "pro" ? "Switch to Free" : "Switch to Pro";
-  const videosPerClick = getVideosPerClick(state.plan);
-
-  if (state.plan === "pro") {
-    dom.accountSummary.textContent = `Reposts only | ${videosPerClick} videos per click | Unlimited searches`;
-    dom.freePlanButton.disabled = false;
-    dom.freePlanButton.textContent = "Switch to Free";
-    dom.proPlanButton.textContent = "Current Plan";
-    dom.proPlanButton.disabled = true;
-  } else {
-    const remaining = account.searchesRemaining ?? 0;
-    dom.accountSummary.textContent = `Reposts only | ${videosPerClick} videos per click | ${remaining} free searches left today`;
-    dom.freePlanButton.disabled = true;
-    dom.freePlanButton.textContent = "Current Plan";
-    dom.proPlanButton.textContent = "Upgrade to Pro";
-    dom.proPlanButton.disabled = false;
-  }
-
+function updateAccountUi() {
   syncDownloadButtons();
 }
 
@@ -165,7 +122,7 @@ function createResultCard(item) {
   author.textContent = `@${item.author || "unknown"}`;
   likes.textContent = `${formatCount(item.likes)} likes`;
   link.href = item.videoUrl;
-  downloadButton.textContent = state.plan === "pro" ? "Download Video" : "Download (Pro)";
+  downloadButton.textContent = "Download Video";
   downloadButton.addEventListener("click", async () => {
     try {
       await handleDownload(item);
@@ -219,46 +176,7 @@ function logSearchDebug(payload) {
   );
 }
 
-async function fetchPlans() {
-  const response = await apiFetch("/api/plans");
-  const payload = await response.json();
 
-  state.plans = payload.plans || {};
-
-  if ((payload.account?.plan || "free") !== state.preferredPlan) {
-    await setPlan(state.preferredPlan, { silent: true });
-    return;
-  }
-
-  updateAccountUi(payload.account);
-}
-
-async function setPlan(plan, { silent = false } = {}) {
-  state.preferredPlan = plan;
-  window.localStorage.setItem("ilr_plan", plan);
-  const response = await apiFetch(`/api/account/plan?plan=${encodeURIComponent(plan)}`, {
-    method: "POST"
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Could not change plan.");
-  }
-
-  updateAccountUi(payload.account);
-
-  if (!silent) {
-    setStatus(payload.note, "success");
-  }
-}
-
-async function ensurePlanSynced() {
-  if (state.plan === state.preferredPlan) {
-    return;
-  }
-
-  await setPlan(state.preferredPlan, { silent: true });
-}
 
 async function performSearch({ append = false } = {}) {
   const username = dom.username.value.trim().replace(/^@+/, "");
@@ -266,8 +184,7 @@ async function performSearch({ append = false } = {}) {
   const searchKey = getSearchKey(username, keyword);
   const shouldAppend = append && state.activeSearchKey === searchKey;
   const cursor = shouldAppend ? state.nextCursor : "0";
-  const effectivePlan = state.preferredPlan || state.plan || "free";
-  const count = getRequestCount(effectivePlan);
+  const count = getRequestCount();
 
   if (!username) {
     setStatus("Please enter a TikTok username.", "error");
@@ -277,7 +194,7 @@ async function performSearch({ append = false } = {}) {
   dom.searchButton.disabled = true;
   dom.loadMore.disabled = true;
   dom.resultsTitle.textContent = "Reposted videos";
-  const videosPerClick = getVideosPerClick(effectivePlan, { isLoadMore: shouldAppend });
+  const videosPerClick = getVideosPerClick({ isLoadMore: shouldAppend });
   setStatus(`Searching reposts for @${username} (${videosPerClick} videos per click)...`);
 
   const requestUrl =
@@ -287,7 +204,6 @@ async function performSearch({ append = false } = {}) {
     `&count=${encodeURIComponent(count)}`;
 
   try {
-    await ensurePlanSynced();
     const response = await apiFetch(requestUrl);
     const payload = await response.json();
 
@@ -320,10 +236,6 @@ async function performSearch({ append = false } = {}) {
   }
 }
 
-dom.dismissBanner.addEventListener("click", () => {
-  dom.topBanner.hidden = true;
-});
-
 dom.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   await performSearch({ append: false });
@@ -331,48 +243,4 @@ dom.form.addEventListener("submit", async (event) => {
 
 dom.loadMore.addEventListener("click", async () => {
   await performSearch({ append: true });
-});
-
-dom.quickPlanToggle.addEventListener("click", async () => {
-  const nextPlan = state.plan === "pro" ? "free" : "pro";
-
-  try {
-    await setPlan(nextPlan);
-  } catch (error) {
-    setStatus(getReadableError(error, `Could not switch to ${nextPlan}.`), "error");
-  }
-});
-
-dom.proPlanButton.addEventListener("click", async () => {
-  try {
-    await setPlan("pro");
-  } catch (error) {
-    setStatus(getReadableError(error, "Could not switch to Pro."), "error");
-  }
-});
-
-dom.freePlanButton.addEventListener("click", async () => {
-  if (!dom.freePlanButton.disabled) {
-    try {
-      await setPlan("free");
-    } catch (error) {
-      setStatus(getReadableError(error, "Could not switch to Free."), "error");
-    }
-  }
-});
-
-document.getElementById("login-button").addEventListener("click", async () => {
-  setStatus("Authentication will be connected to Supabase later. Demo mode is active.", "success");
-});
-
-document.getElementById("signup-button").addEventListener("click", async () => {
-  try {
-    await setPlan("pro");
-  } catch (error) {
-    setStatus(getReadableError(error, "Could not switch to Pro."), "error");
-  }
-});
-
-fetchPlans().catch((error) => {
-  setStatus(getReadableError(error, "Could not load plan data."), "error");
 });

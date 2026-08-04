@@ -4,14 +4,10 @@ import { PLAN_TYPES, getPlanDetails } from "./plans.js";
 
 const sessions = new Map();
 
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function ensureSession(sessionId) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
-      plan: PLAN_TYPES.FREE,
+      plan: PLAN_TYPES.STANDARD,
       searchesByDay: {}
     });
   }
@@ -52,36 +48,19 @@ export function resolveSession(request, response) {
 }
 
 export function getUserState(session) {
-  const todayKey = getTodayKey();
-  const searchesToday = session.searchesByDay[todayKey] || 0;
-  const plan = getPlanDetails(session.plan);
-
   return {
-    plan: session.plan,
-    searchesToday,
-    searchesRemaining:
-      plan.dailySearchLimit === Number.POSITIVE_INFINITY
-        ? null
-        : Math.max(plan.dailySearchLimit - searchesToday, 0)
+    plan: session.plan
   };
 }
 
 export function recordSearch(session) {
-  const todayKey = getTodayKey();
-  session.searchesByDay[todayKey] = (session.searchesByDay[todayKey] || 0) + 1;
+  // no-op: search tracking removed
 }
 
 export function setPlan(session, plan) {
   session.plan = plan;
 }
 
-export function canSearch(session) {
-  const state = getUserState(session);
-  const plan = getPlanDetails(state.plan);
-
-  if (plan.dailySearchLimit === Number.POSITIVE_INFINITY) {
-    return true;
-  }
-
-  return state.searchesToday < plan.dailySearchLimit;
+export function canSearch() {
+  return true;
 }

@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { json, sendError, serveStaticFile } from "./lib/http.js";
 import { resolveTikTokDownload } from "./lib/downloader.js";
 import { executeSearch, normalizeSearchError } from "./lib/search.js";
-import { CONTENT_TYPES, PLAN_DETAILS, PLAN_TYPES } from "./lib/plans.js";
-import { getUserState, resolveSession, setPlan } from "./lib/session-store.js";
+import { CONTENT_TYPES } from "./lib/plans.js";
+import { getUserState, resolveSession } from "./lib/session-store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,40 +29,12 @@ function getStaticFilePath(urlPathname) {
 
 async function handleApi(request, response, url) {
   const { session } = resolveSession(request, response);
-  const requestedPlan = (request.headers["x-ilr-plan"] || "").toString().toLowerCase();
-
-  if (PLAN_DETAILS[requestedPlan] && session.plan !== requestedPlan) {
-    setPlan(session, requestedPlan);
-  }
 
   if (request.method === "GET" && (url.pathname === "/api/health" || url.pathname === "/health")) {
     return json(response, 200, {
       ok: true,
       service: "iloverepost",
       timestamp: new Date().toISOString()
-    });
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/plans") {
-    return json(response, 200, {
-      plans: PLAN_DETAILS,
-      account: getUserState(session)
-    });
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/account/plan") {
-    const plan = url.searchParams.get("plan") || PLAN_TYPES.FREE;
-
-    if (!PLAN_DETAILS[plan]) {
-      return sendError(response, 400, "Unknown plan.");
-    }
-
-    setPlan(session, plan);
-
-    return json(response, 200, {
-      ok: true,
-      account: getUserState(session),
-      note: `Plan switched to ${plan === PLAN_TYPES.PRO ? "Pro" : "Free"} for local testing.`
     });
   }
 
