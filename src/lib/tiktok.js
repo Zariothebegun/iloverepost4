@@ -256,37 +256,6 @@ function mapVideoItem(item) {
   };
 }
 
-function mapStoryItem(item) {
-  const author = item?.author ?? {};
-  const video = item?.video ?? {};
-  const stats = item?.stats ?? {};
-
-  return {
-    id: safeString(item?.id),
-    videoId: safeString(item?.id),
-    caption: safeString(item?.desc),
-    author: safeString(author.uniqueId || author.nickname),
-    authorNickname: safeString(author.nickname),
-    authorSecUid: safeString(author.secUid),
-    authorAvatar: safeString(author.avatarThumb || author.avatarMedium || author.avatarLarger),
-    thumbnail: safeString(video.cover || video.originCover || video.dynamicCover),
-    playUrl: safeString(video.playAddr || video.downloadAddr),
-    videoUrl: safeString(author.uniqueId)
-      ? `https://www.tiktok.com/@${author.uniqueId}/video/${safeString(item?.id)}`
-      : `https://www.tiktok.com/video/${safeString(item?.id)}`,
-    duration: safeNumber(video.duration),
-    width: safeNumber(video.width),
-    height: safeNumber(video.height),
-    likes: safeNumber(stats.diggCount),
-    comments: safeNumber(stats.commentCount),
-    shares: safeNumber(stats.shareCount),
-    plays: safeNumber(stats.playCount),
-    createTime: safeNumber(item?.createTime),
-    isStory: true,
-    raw: item ?? {}
-  };
-}
-
 async function fetchUserDetailContext(profileUrl, normalizedUsername, cookieJar) {
   const detailUrl = new URL("https://www.tiktok.com/api/user/detail/");
 
@@ -606,97 +575,6 @@ function extractTikTokStatusCode(error) {
   return Number.isFinite(code) ? code : null;
 }
 
-async function fetchStoryList(profileContext, cursor, count) {
-  const listUrl = new URL("https://www.tiktok.com/api/post/item_list/");
-  const params = buildListParams({
-    secUid: profileContext.user.secUid,
-    cursor,
-    count,
-    appContext: profileContext.appContext,
-    cookieJar: profileContext.cookieJar
-  });
-
-  for (const [key, value] of Object.entries(params)) {
-    listUrl.searchParams.set(key, value);
-  }
-
-  const response = await performRequest(
-    listUrl,
-    {
-      headers: {
-        ...buildBrowserHeaders(profileContext.cookieJar, profileContext.profileUrl),
-        accept: "application/json, text/plain, */*",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin"
-      }
-    },
-    profileContext.cookieJar
-  );
-
-  if (!response.ok) return null;
-
-  try {
-    return await parseJsonResponse(response);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchStoryPages(profileContext, cursor, count, pagesToFetch) {
-  const aggregatedItems = [];
-  let currentCursor = cursor;
-  let hasMore = true;
-  let pagesFetched = 0;
-  let lastLogId = "";
-  let rawItemCount = 0;
-
-  for (let pageIndex = 0; pageIndex < pagesToFetch; pageIndex += 1) {
-    if (!hasMore && pageIndex > 0) break;
-
-    const payload = await fetchStoryList(profileContext, currentCursor, count);
-
-    if (!payload) break;
-
-    if (payload?.statusCode || payload?.status_code) {
-      const code = payload?.statusCode ?? payload?.status_code;
-      const message = payload?.status_msg || payload?.message || "TikTok stories request failed.";
-      throw new Error(`TikTok stories request failed (${code}): ${message}`);
-    }
-
-    const pageItems = Array.isArray(payload?.itemList) ? payload.itemList.map(mapStoryItem) : [];
-    const nextCursor = Number(payload?.cursor ?? currentCursor);
-    const safeNextCursor = Number.isFinite(nextCursor) && nextCursor >= 0 ? nextCursor : currentCursor;
-
-    aggregatedItems.push(...pageItems);
-    rawItemCount += pageItems.length;
-    pagesFetched += 1;
-    hasMore = Boolean(payload?.hasMore);
-    lastLogId = safeString(payload?.extra?.logid) || lastLogId;
-
-    if (!hasMore || safeNextCursor === currentCursor || pageItems.length === 0) {
-      currentCursor = safeNextCursor;
-      break;
-    }
-
-    currentCursor = safeNextCursor;
-  }
-
-  const uniqueItems = dedupeItems(aggregatedItems);
-
-  return {
-    itemList: uniqueItems,
-    cursor: currentCursor,
-    hasMore,
-    extra: { logid: lastLogId },
-    debug: {
-      pagesFetched,
-      rawItemCount,
-      uniqueItemCount: uniqueItems.length
-    }
-  };
-}
-
 export { normalizeSearchText };
 
 export async function searchTikTokProfile({
@@ -751,32 +629,4 @@ export async function searchTikTokProfile({
 
     throw error;
   }
-}
-
-export async function searchTikTokStories({
-  username,
-  cursor = 0,
-  count = 20,
-  pagesToFetch = 1
-}) {
-  const profileContext = await bootstrapProfileContext(username);
-
-  const payload = await fetchStoryPages(
-    profileContext,
-    cursor,
-    count,
-    Math.max(1, pagesToFetch)
-  );
-
-  const result = buildResult(profileContext, payload, CONTENT_TYPES.STORIES, count, cursor, "");
-
-  return {
-    ...result,
-    debug: {
-      ...result.debug,
-      pagesFetched: payload.debug.pagesFetched,
-      fetchedVideoCount: payload.debug.uniqueItemCount,
-      rawFetchedVideoCount: payload.debug.rawItemCount
-    }
-  };
 }

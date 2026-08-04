@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ILOVEREPOST</title>
-    <meta name="description" content="Discover reposts and stories from any public TikTok profile. Anonymous, fast, free." />
+    <meta name="description" content="Discover reposts from any public TikTok profile. Download videos. Anonymous, fast, free." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♥</text></svg>" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -28,15 +28,15 @@
       <!-- Hero -->
       <section class="hero">
         <div class="container hero-inner">
-          <h1>Discover any TikTok<br /><em>reposts &amp; stories</em></h1>
-          <p>Enter a username to explore reposted videos, stories, and download content — completely anonymous.</p>
+          <h1>Discover any TikTok<br /><em>reposts</em></h1>
+          <p>Enter a username to explore and download reposted videos — completely anonymous.</p>
         </div>
       </section>
 
       <!-- Search -->
       <section class="search-section" id="search">
         <div class="container">
-          <div class="search-card">
+          <div class="glass-card search-card">
 
             <!-- Tabs -->
             <div class="tabs-row">
@@ -44,33 +44,49 @@
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6 6h4M6 8.5h4M6 11h1.5"/></svg>
                 Reposts
               </button>
-              <button class="tab-btn" data-tab="stories" type="button">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M6.5 6.5 10.5 8l-4 1.5V6.5Z"/></svg>
-                Stories
+              <button class="tab-btn" data-tab="download" type="button">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.5v8M4.5 8L8 11.5 11.5 8M3 13.5h10"/></svg>
+                Download
               </button>
             </div>
 
-            <!-- Fields -->
-            <div class="fields-row">
-              <div class="input-wrap">
-                <label for="username">Username</label>
-                <input id="username" type="text" placeholder="@username" autocomplete="off" required />
+            <!-- Reposts fields -->
+            <div id="reposts-fields">
+              <div class="fields-row">
+                <div class="input-wrap">
+                  <label for="username">Username</label>
+                  <input id="username" type="text" placeholder="@username" autocomplete="off" />
+                </div>
+                <div class="input-wrap">
+                  <label for="keyword">Keyword</label>
+                  <input id="keyword" type="text" placeholder="Filter by keyword…" autocomplete="off" />
+                </div>
+                <button class="glass-btn search-btn" id="search-btn" type="button">Search</button>
               </div>
-              <div class="input-wrap" id="keyword-wrap">
-                <label for="keyword">Keyword</label>
-                <input id="keyword" type="text" placeholder="Filter by keyword…" autocomplete="off" />
+              <div class="search-meta">
+                <span class="anon-chip">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4Z"/><circle cx="8" cy="8" r="1.5"/></svg>
+                  100% anonymous
+                </span>
+                <span class="meta-dot"></span>
+                <span>No limits · No login</span>
               </div>
-              <button class="search-btn" id="search-btn" type="button">Search</button>
             </div>
 
-            <div class="search-meta">
-              <span class="anon-chip">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4Z"/><circle cx="8" cy="8" r="1.5"/></svg>
-                100% anonymous
-              </span>
-              <span class="meta-dot"></span>
-              <span>No limits · No login</span>
+            <!-- Download field -->
+            <div id="download-fields" hidden>
+              <div class="fields-row dl-row">
+                <div class="input-wrap" style="flex:1">
+                  <label for="dl-url">TikTok URL</label>
+                  <input id="dl-url" type="url" placeholder="https://www.tiktok.com/@user/video/…" autocomplete="off" />
+                </div>
+                <button class="glass-btn search-btn" id="dl-btn" type="button">Download</button>
+              </div>
+              <div class="search-meta">
+                <span>Paste any TikTok video link to download it as MP4</span>
+              </div>
             </div>
+
           </div>
         </div>
       </section>
@@ -82,11 +98,14 @@
           <!-- Status -->
           <div class="status-toast idle" id="status">
             <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5.5v3M8 10.5v.01"/></svg>
-            <span>Enter a username to get started.</span>
+            <span id="status-text">Enter a username to get started.</span>
           </div>
 
+          <!-- Download result -->
+          <div id="dl-result" hidden></div>
+
           <!-- Profile -->
-          <div class="profile-card" id="profile-card" hidden>
+          <div class="glass-card profile-card" id="profile-card" hidden>
             <img id="profile-avatar" alt="" />
             <div class="profile-info">
               <h3 id="profile-name"></h3>
@@ -109,9 +128,12 @@
             <p>Try a different username or keyword.</p>
           </div>
 
-          <!-- Load More -->
-          <div style="display:flex;justify-content:center;margin-top:20px;">
-            <button class="load-more-btn" id="load-more" hidden>Load more</button>
+          <!-- Infinite scroll sentinel -->
+          <div id="scroll-sentinel" hidden>
+            <div class="liquid-loader">
+              <div class="liquid-orb"></div>
+              <span id="scroll-status">Loading more…</span>
+            </div>
           </div>
         </div>
       </section>

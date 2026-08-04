@@ -3,8 +3,7 @@ export const PLAN_TYPES = {
 };
 
 export const CONTENT_TYPES = {
-  REPOSTS: "reposts",
-  STORIES: "stories"
+  REPOSTS: "reposts"
 };
 
 export const FIXED_VIDEOS_PER_CLICK = 60;
@@ -13,7 +12,7 @@ export const PLAN_DETAILS = {
   [PLAN_TYPES.STANDARD]: {
     id: PLAN_TYPES.STANDARD,
     name: "Standard",
-    allowedContentTypes: [CONTENT_TYPES.REPOSTS, CONTENT_TYPES.STORIES],
+    allowedContentTypes: [CONTENT_TYPES.REPOSTS],
     maxCursor: 5000,
     pageSize: 20,
     initialPageRequests: 6,

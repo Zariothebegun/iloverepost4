@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { json, sendError, serveStaticFile } from "./lib/http.js";
 import { resolveTikTokDownload } from "./lib/downloader.js";
-import { executeSearch, executeStorySearch, normalizeSearchError } from "./lib/search.js";
+import { executeSearch, normalizeSearchError } from "./lib/search.js";
 import { CONTENT_TYPES } from "./lib/plans.js";
 import { getUserState, resolveSession } from "./lib/session-store.js";
 
@@ -80,33 +80,6 @@ async function handleApi(request, response, url) {
         username,
         contentType,
         keyword,
-        cursor,
-        count
-      });
-
-      return json(response, 200, result);
-    } catch (error) {
-      const normalized = normalizeSearchError(error, session);
-      return json(response, normalized.statusCode, {
-        ...normalized.payload,
-        username: username.replace(/^@+/, "")
-      });
-    }
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/stories") {
-    const username = url.searchParams.get("username") || "";
-    const cursor = Number(url.searchParams.get("cursor") || "0");
-    const count = Math.min(Number(url.searchParams.get("count") || "20"), 35);
-
-    if (!username.trim()) {
-      return sendError(response, 400, "The `username` query parameter is required.");
-    }
-
-    try {
-      const result = await executeStorySearch({
-        session,
-        username,
         cursor,
         count
       });
