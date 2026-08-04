@@ -470,6 +470,12 @@ select {
   min-height: 92px;
 }
 
+.footer-version {
+  font-size: 13px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
 @media (max-width: 900px) {
   .field-grid,
   .pricing-grid {
