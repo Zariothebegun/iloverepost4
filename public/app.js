@@ -1,262 +1,237 @@
+/* ─── ILOVEREPOST · Frontend ─── */
+
 const state = {
-  activeTab: "reposts",
-  nextCursor: "0",
-  resultIds: new Set(),
-  activeSearchKey: ""
+  tab: "reposts",
+  cursor: "0",
+  ids: new Set(),
+  searchKey: "",
+  loading: false
 };
 
-const DEFAULT_VIDEOS_PER_CLICK = 120;
-const DEFAULT_REQUEST_COUNT = 20;
+const $ = (sel) => document.getElementById(sel);
 
 const dom = {
-  form: document.getElementById("search-form"),
-  username: document.getElementById("username"),
-  searchButton: document.getElementById("search-button"),
-  statusCard: document.getElementById("status-card"),
-  profileCard: document.getElementById("profile-card"),
-  profileAvatar: document.getElementById("profile-avatar"),
-  profileName: document.getElementById("profile-name"),
-  profileMeta: document.getElementById("profile-meta"),
-  resultsGrid: document.getElementById("results-grid"),
-  loadMore: document.getElementById("load-more"),
-  resultsTitle: document.getElementById("results-title"),
-  resultTemplate: document.getElementById("result-card-template"),
-  storyTemplate: document.getElementById("story-card-template"),
-  tabsBar: document.getElementById("tabs-bar")
+  username: $("username"),
+  keyword: $("keyword"),
+  keywordWrap: $("keyword-wrap"),
+  searchBtn: $("search-btn"),
+  status: $("status"),
+  profileCard: $("profile-card"),
+  profileAvatar: $("profile-avatar"),
+  profileName: $("profile-name"),
+  profileMeta: $("profile-meta"),
+  grid: $("results-grid"),
+  skeleton: $("skeleton"),
+  empty: $("empty-state"),
+  loadMore: $("load-more"),
+  tabs: document.querySelectorAll(".tab-btn")
 };
 
 /* ─── Helpers ─── */
 
-function formatCount(value) {
-  const number = Number(value || 0);
-  if (number >= 1_000_000) return `${(number / 1_000_000).toFixed(1)}M`;
-  if (number >= 1_000) return `${(number / 1_000).toFixed(1)}K`;
-  return String(number);
+function fmt(n) {
+  n = Number(n || 0);
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(n);
 }
 
-function formatDuration(seconds) {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+function fmtDuration(s) {
+  if (!s) return "";
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}:${String(s % 60).padStart(2, "0")}` : `${s}s`;
 }
 
-function setStatus(message, tone = "") {
-  dom.statusCard.textContent = message;
-  dom.statusCard.className = `status-card${tone ? ` ${tone}` : ""}`;
+function setStatus(msg, tone = "idle") {
+  dom.status.className = `status-toast ${tone}`;
+  const icons = {
+    idle: '<circle cx="8" cy="8" r="6"/><path d="M8 5.5v3M8 10.5v.01"/>',
+    loading: '<circle cx="8" cy="8" r="6" stroke-dasharray="24" stroke-dashoffset="6"><animateTransform attributeName="transform" type="rotate" values="0 8 8;360 8 8" dur="0.8s" repeatCount="indefinite"/></circle>',
+    success: '<circle cx="8" cy="8" r="6"/><path d="M5.5 8l2 2 3-3.5"/>',
+    error: '<circle cx="8" cy="8" r="6"/><path d="M6 6l4 4M10 6l-4 4"/>'
+  };
+  dom.status.querySelector(".status-icon").innerHTML = icons[tone] || icons.idle;
+  dom.status.querySelector("span:last-child").textContent = msg;
 }
 
-async function apiFetch(url, options = {}) {
-  return fetch(url, options);
-}
-
-function getReadableError(error, fallbackMessage) {
-  if (error?.message === "Failed to fetch") {
-    return "The server is offline. Start the backend and try again.";
+function showSkeletons(count = 6) {
+  dom.skeleton.hidden = false;
+  dom.skeleton.innerHTML = "";
+  for (let i = 0; i < count; i++) {
+    dom.skeleton.innerHTML += `
+      <div class="skeleton-card">
+        <div class="skeleton-thumb"></div>
+        <div class="skeleton-body">
+          <div class="skeleton-line medium"></div>
+          <div class="skeleton-line short"></div>
+        </div>
+      </div>`;
   }
-  return error?.message || fallbackMessage;
 }
 
-function getSearchKey(username) {
-  return `${state.activeTab}::${username.toLowerCase()}`;
+function hideSkeletons() {
+  dom.skeleton.hidden = true;
+  dom.skeleton.innerHTML = "";
 }
 
 /* ─── Tabs ─── */
 
-dom.tabsBar.addEventListener("click", (event) => {
-  const button = event.target.closest(".tab-button");
-  if (!button) return;
-
-  const tab = button.dataset.tab;
-  if (tab === state.activeTab) return;
-
-  state.activeTab = tab;
-
-  for (const btn of dom.tabsBar.querySelectorAll(".tab-button")) {
-    btn.classList.toggle("active", btn.dataset.tab === tab);
-  }
-
-  // Reset results
-  dom.resultsGrid.innerHTML = "";
-  state.resultIds.clear();
-  state.activeSearchKey = "";
+function switchTab(tab) {
+  state.tab = tab;
+  dom.tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+  dom.keywordWrap.style.display = tab === "reposts" ? "" : "none";
+  dom.grid.innerHTML = "";
+  state.ids.clear();
+  state.searchKey = "";
   dom.profileCard.hidden = true;
   dom.loadMore.hidden = true;
-  dom.resultsTitle.textContent = tab === "stories" ? "TikTok stories" : "TikTok videos";
-  setStatus(tab === "stories"
-    ? "Enter a TikTok username to search stories."
-    : "Enter a TikTok username to search reposts."
-  );
-});
+  dom.empty.hidden = true;
+  setStatus(tab === "stories" ? "Enter a username to view stories." : "Enter a username to get started.");
+}
+
+dom.tabs.forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 
 /* ─── Download ─── */
 
-async function handleDownload(item) {
-  const response = await apiFetch(
-    `/api/download?url=${encodeURIComponent(item.videoUrl)}&playUrl=${encodeURIComponent(item.playUrl || "")}`
-  );
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Download failed.");
-  }
-
-  const anchor = document.createElement("a");
-  anchor.href = payload.downloadUrl;
-  anchor.download = payload.filename || "tiktok-video.mp4";
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  anchor.click();
+async function downloadVideo(item) {
+  const res = await fetch(`/api/download?url=${encodeURIComponent(item.videoUrl)}&playUrl=${encodeURIComponent(item.playUrl || "")}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Download failed");
+  const a = document.createElement("a");
+  a.href = data.downloadUrl;
+  a.download = data.filename || "video.mp4";
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.click();
 }
 
-/* ─── Rendering ─── */
+/* ─── Card Builder ─── */
 
-function renderProfile(profile) {
-  dom.profileAvatar.src = profile.avatar || "https://via.placeholder.com/112x112.png?text=TT";
-  dom.profileAvatar.alt = `${profile.username} avatar`;
-  dom.profileName.textContent = `@${profile.username}${profile.verified ? " — verified" : ""}`;
-  dom.profileMeta.textContent = `${formatCount(profile.followerCount)} followers · ${formatCount(profile.videoCount)} videos`;
-  dom.profileCard.hidden = false;
-}
-
-function createCard(item, isStory) {
-  const template = isStory ? dom.storyTemplate : dom.resultTemplate;
-  const node = template.content.firstElementChild.cloneNode(true);
-  const image = node.querySelector(".thumb");
-  const caption = node.querySelector(".result-caption");
-  const author = node.querySelector(".result-author");
-  const likes = node.querySelector(".meta-likes");
-  const link = node.querySelector(".open-video");
-  const downloadButton = node.querySelector(".download-video");
-  const durationEl = node.querySelector(".duration-text");
-
-  image.src = item.thumbnail || "https://via.placeholder.com/720x720.png?text=No+Thumbnail";
-  image.alt = item.caption || `TikTok video ${item.videoId}`;
-  caption.textContent = item.caption || "No caption available.";
-  author.textContent = `@${item.author || "unknown"}`;
-  likes.textContent = `${formatCount(item.likes)} likes`;
-  link.href = item.videoUrl;
-
-  const duration = formatDuration(item.duration);
-  if (duration && durationEl) {
-    durationEl.textContent = duration;
-  } else if (durationEl) {
-    durationEl.hidden = true;
-  }
-
-  downloadButton.addEventListener("click", async () => {
-    const original = downloadButton.textContent;
-    downloadButton.textContent = "Downloading…";
-    downloadButton.disabled = true;
-    try {
-      await handleDownload(item);
-    } catch (error) {
-      setStatus(error.message, "error");
-    } finally {
-      downloadButton.textContent = original;
-      downloadButton.disabled = false;
-    }
+function buildCard(item) {
+  const card = document.createElement("article");
+  card.className = "video-card";
+  const dur = fmtDuration(item.duration);
+  const isStory = item.isStory;
+  card.innerHTML = `
+    <div class="video-thumb">
+      <img src="${item.thumbnail || "https://via.placeholder.com/360x480?text=."}" alt="" loading="lazy" />
+      ${isStory ? '<span class="thumb-badge">Story</span>' : ""}
+      ${dur ? `<span class="thumb-duration">${dur}</span>` : ""}
+    </div>
+    <div class="video-body">
+      <p class="video-caption">${item.caption || "No caption"}</p>
+      <p class="video-author">@${item.author || "unknown"}</p>
+      <div class="video-footer">
+        <span class="video-stats">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.5C5.5 1 2 3 2 6c0 4.5 6 7.5 6 7.5s6-3 6-7.5c0-3-3.5-5-6-2.5Z"/></svg>
+          ${fmt(item.likes)}
+        </span>
+        <div class="video-actions">
+          <button class="icon-btn dl-btn" title="Download">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.5v8M4.5 8L8 11.5 11.5 8M3 13.5h10"/></svg>
+          </button>
+          <a class="icon-btn" href="${item.videoUrl}" target="_blank" rel="noopener" title="View on TikTok">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V10M9 2h5v5M14 2L7.5 8.5"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>`;
+  card.querySelector(".dl-btn").addEventListener("click", async () => {
+    const btn = card.querySelector(".dl-btn");
+    btn.style.opacity = "0.4";
+    btn.style.pointerEvents = "none";
+    try { await downloadVideo(item); }
+    catch (e) { setStatus(e.message, "error"); }
+    finally { btn.style.opacity = ""; btn.style.pointerEvents = ""; }
   });
+  return card;
+}
 
-  return node;
+/* ─── Render ─── */
+
+function renderProfile(user) {
+  dom.profileAvatar.src = user.avatar || "https://via.placeholder.com/96?text=TT";
+  dom.profileAvatar.alt = user.username;
+  dom.profileName.textContent = `@${user.username}${user.verified ? " ✓" : ""}`;
+  dom.profileMeta.textContent = `${fmt(user.followerCount)} followers · ${fmt(user.videoCount)} videos`;
+  dom.profileCard.hidden = false;
 }
 
 function renderItems(items, { append = false, isStory = false } = {}) {
   if (!append) {
-    dom.resultsGrid.innerHTML = "";
-    state.resultIds.clear();
+    dom.grid.innerHTML = "";
+    state.ids.clear();
   }
-
   if (!items.length && !append) {
-    setStatus(isStory ? "No stories found for this user." : "No matching videos found.", "error");
+    dom.empty.hidden = false;
     return;
   }
-
-  const fragment = document.createDocumentFragment();
+  dom.empty.hidden = true;
+  const frag = document.createDocumentFragment();
   for (const item of items) {
-    if (state.resultIds.has(item.videoId)) continue;
-    state.resultIds.add(item.videoId);
-    fragment.appendChild(createCard(item, isStory));
+    if (state.ids.has(item.videoId)) continue;
+    state.ids.add(item.videoId);
+    frag.appendChild(buildCard({ ...item, isStory: isStory || item.isStory }));
   }
-
-  dom.resultsGrid.appendChild(fragment);
-}
-
-function logSearchDebug(payload) {
-  const fetchedCount = payload?.debug?.fetchedVideoCount ?? payload?.items?.length ?? 0;
-  const nextCursor = payload?.pagination?.cursor ?? "0";
-  console.log(
-    `[ILOVEREPOST] Fetched ${fetchedCount} items (cursor ${nextCursor})`,
-    {
-      pagesFetched: payload?.debug?.pagesFetched ?? 1,
-      hasMore: payload?.pagination?.hasMore ?? false,
-      tab: state.activeTab
-    }
-  );
+  dom.grid.appendChild(frag);
 }
 
 /* ─── Search ─── */
 
-async function performSearch({ append = false } = {}) {
+async function search() {
   const username = dom.username.value.trim().replace(/^@+/, "");
-  const searchKey = getSearchKey(username);
-  const shouldAppend = append && state.activeSearchKey === searchKey;
-  const cursor = shouldAppend ? state.nextCursor : "0";
-  const isStory = state.activeTab === "stories";
+  const keyword = dom.keyword.value.trim();
+  if (!username) { setStatus("Please enter a username.", "error"); return; }
+  if (state.loading) return;
 
-  if (!username) {
-    setStatus("Please enter a TikTok username.", "error");
-    return;
-  }
+  const sk = `${state.tab}::${username.toLowerCase()}`;
+  const isAppend = state.searchKey === sk && state.cursor !== "0";
+  const cursor = isAppend ? state.cursor : "0";
+  const isStory = state.tab === "stories";
 
-  dom.searchButton.disabled = true;
+  state.loading = true;
+  dom.searchBtn.disabled = true;
   dom.loadMore.disabled = true;
-  dom.resultsTitle.textContent = isStory ? "TikTok stories" : "TikTok videos";
+  dom.empty.hidden = true;
+  setStatus(`Searching ${isStory ? "stories" : "reposts"} for @${username}…`, "loading");
 
-  const endpoint = isStory ? "stories" : "reposts";
-  setStatus(`Searching ${endpoint} for @${username}…`);
+  if (!isAppend) showSkeletons(6);
 
-  const requestUrl =
-    `/api/${endpoint}?username=${encodeURIComponent(username)}` +
-    `&cursor=${encodeURIComponent(cursor)}` +
-    `&count=${encodeURIComponent(DEFAULT_REQUEST_COUNT)}`;
+  const ep = isStory ? "stories" : "reposts";
+  let url = `/api/${ep}?username=${encodeURIComponent(username)}&cursor=${cursor}&count=20`;
+  if (!isStory && keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
 
   try {
-    const response = await apiFetch(requestUrl);
-    const payload = await response.json();
+    const res = await fetch(url);
+    const data = await res.json();
+    hideSkeletons();
 
-    if (!response.ok) {
-      throw new Error(payload.error || "Request failed.");
-    }
+    if (!res.ok) throw new Error(data.error || "Request failed");
 
-    state.activeSearchKey = searchKey;
-    state.nextCursor = payload.pagination.cursor;
-    logSearchDebug(payload);
-    renderProfile(payload.user);
-    renderItems(payload.items, { append: shouldAppend, isStory });
+    state.searchKey = sk;
+    state.cursor = data.pagination.cursor;
 
-    const loadedCount = payload.items.length;
-    setStatus(
-      `Loaded ${loadedCount} ${isStory ? "stories" : "reposts"} for @${payload.user.username}.`,
-      "success"
-    );
+    renderProfile(data.user);
+    renderItems(data.items, { append: isAppend, isStory });
 
-    dom.loadMore.hidden = !payload.pagination.hasMore;
+    const n = data.items.length;
+    const type = isStory ? "stories" : "reposts";
+    setStatus(`Loaded ${n} ${type} for @${data.user.username}.`, "success");
+
+    dom.loadMore.hidden = !data.pagination.hasMore;
     dom.loadMore.disabled = false;
-  } catch (error) {
-    setStatus(getReadableError(error, "Search failed."), "error");
+  } catch (err) {
+    hideSkeletons();
+    setStatus(err.message, "error");
   } finally {
-    dom.searchButton.disabled = false;
+    state.loading = false;
+    dom.searchBtn.disabled = false;
   }
 }
 
 /* ─── Events ─── */
 
-dom.form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await performSearch({ append: false });
-});
-
-dom.loadMore.addEventListener("click", async () => {
-  await performSearch({ append: true });
-});
+dom.searchBtn.addEventListener("click", () => { state.cursor = "0"; search(); });
+dom.username.addEventListener("keydown", (e) => { if (e.key === "Enter") { state.cursor = "0"; search(); } });
+dom.keyword.addEventListener("keydown", (e) => { if (e.key === "Enter") { state.cursor = "0"; search(); } });
+dom.loadMore.addEventListener("click", () => search());

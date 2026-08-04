@@ -634,7 +634,13 @@ async function fetchStoryList(profileContext, cursor, count) {
     profileContext.cookieJar
   );
 
-  return parseJsonResponse(response);
+  if (!response.ok) return null;
+
+  try {
+    return await parseJsonResponse(response);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchStoryPages(profileContext, cursor, count, pagesToFetch) {
@@ -649,6 +655,8 @@ async function fetchStoryPages(profileContext, cursor, count, pagesToFetch) {
     if (!hasMore && pageIndex > 0) break;
 
     const payload = await fetchStoryList(profileContext, currentCursor, count);
+
+    if (!payload) break;
 
     if (payload?.statusCode || payload?.status_code) {
       const code = payload?.statusCode ?? payload?.status_code;

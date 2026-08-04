@@ -3,170 +3,127 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ILOVEREPOST - Discover TikTok Reposts & Stories</title>
-    <meta
-      name="description"
-      content="Anonymously search reposted videos and stories from any public TikTok profile."
-    />
+    <title>ILOVEREPOST</title>
+    <meta name="description" content="Discover reposts and stories from any public TikTok profile. Anonymous, fast, free." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♥</text></svg>" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+
+    <!-- Header -->
     <header class="site-header">
       <div class="container header-row">
         <a class="brand" href="/">
-          <span class="brand-heart">&hearts;</span>
+          <span class="brand-icon">♥</span>
           <span>ILOVEREPOST</span>
         </a>
-        <nav class="header-actions">
-          <span class="header-badge">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM3 13c0-2.5 2-4 5-4s5 1.5 5 4"/></svg>
-            Anonymous
-          </span>
-        </nav>
+        <span class="header-pill">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4Z"/><circle cx="8" cy="8" r="1.5"/></svg>
+          Anonymous
+        </span>
       </div>
     </header>
 
     <main>
+      <!-- Hero -->
       <section class="hero">
         <div class="container hero-inner">
-          <div class="hero-badge">Discover hidden TikTok activity</div>
-          <h1>
-            Discover reposts &amp; stories of any
-            <span>public TikTok profile</span>
-          </h1>
-          <p>
-            Search by username. Filter by keyword. Download videos.
-            100% anonymous — no login required.
-          </p>
-          <div class="hero-actions">
-            <a class="primary-button" href="#search">Get Started</a>
-          </div>
+          <h1>Discover any TikTok<br /><em>reposts &amp; stories</em></h1>
+          <p>Enter a username to explore reposted videos, stories, and download content — completely anonymous.</p>
         </div>
       </section>
 
+      <!-- Search -->
       <section class="search-section" id="search">
         <div class="container">
-          <form class="search-card" id="search-form">
-            <div class="tabs-bar" id="tabs-bar">
-              <button class="tab-button active" data-tab="reposts" type="button">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M6 6h4M6 8h4M6 10h2"/></svg>
+          <div class="search-card">
+
+            <!-- Tabs -->
+            <div class="tabs-row">
+              <button class="tab-btn active" data-tab="reposts" type="button">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6 6h4M6 8.5h4M6 11h1.5"/></svg>
                 Reposts
               </button>
-              <button class="tab-button" data-tab="stories" type="button">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M6.5 6.5 10 8l-3.5 1.5V6.5Z"/></svg>
+              <button class="tab-btn" data-tab="stories" type="button">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M6.5 6.5 10.5 8l-4 1.5V6.5Z"/></svg>
                 Stories
               </button>
             </div>
 
-            <div class="field-grid">
-              <label class="field">
-                <span class="field-label">TikTok Username</span>
-                <input id="username" name="username" type="text" placeholder="@username" required />
-              </label>
-
-              <div class="field">
-                <span class="field-label">&nbsp;</span>
-                <button class="primary-button search-button" id="search-button" type="submit">
-                  Search
-                </button>
+            <!-- Fields -->
+            <div class="fields-row">
+              <div class="input-wrap">
+                <label for="username">Username</label>
+                <input id="username" type="text" placeholder="@username" autocomplete="off" required />
               </div>
+              <div class="input-wrap" id="keyword-wrap">
+                <label for="keyword">Keyword</label>
+                <input id="keyword" type="text" placeholder="Filter by keyword…" autocomplete="off" />
+              </div>
+              <button class="search-btn" id="search-btn" type="button">Search</button>
             </div>
 
-            <div class="helper-row">
-              <span class="anon-badge">
+            <div class="search-meta">
+              <span class="anon-chip">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4Z"/><circle cx="8" cy="8" r="1.5"/></svg>
-                100% Anonymous
+                100% anonymous
               </span>
-              <span id="account-summary">Reposts &amp; stories — no limits</span>
+              <span class="meta-dot"></span>
+              <span>No limits · No login</span>
             </div>
-          </form>
+          </div>
         </div>
       </section>
 
+      <!-- Results -->
       <section class="results-section" id="results">
         <div class="container">
-          <div class="results-shell">
-            <div class="results-header">
-              <div>
-                <p class="section-kicker">Search results</p>
-                <h2 id="results-title">TikTok videos</h2>
-              </div>
-            </div>
 
-            <div class="status-card" id="status-card">
-              Enter a TikTok username to search reposts and stories.
-            </div>
+          <!-- Status -->
+          <div class="status-toast idle" id="status">
+            <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5.5v3M8 10.5v.01"/></svg>
+            <span>Enter a username to get started.</span>
+          </div>
 
-            <div class="profile-card" id="profile-card" hidden>
-              <img id="profile-avatar" alt="" />
-              <div>
-                <h3 id="profile-name"></h3>
-                <p id="profile-meta"></p>
-              </div>
+          <!-- Profile -->
+          <div class="profile-card" id="profile-card" hidden>
+            <img id="profile-avatar" alt="" />
+            <div class="profile-info">
+              <h3 id="profile-name"></h3>
+              <p id="profile-meta"></p>
             </div>
+          </div>
 
-            <div class="results-grid" id="results-grid"></div>
+          <!-- Skeletons -->
+          <div class="skeleton-grid" id="skeleton" hidden></div>
 
-            <div class="load-more-wrap">
-              <button class="outline-button" id="load-more" type="button" hidden>Load More</button>
+          <!-- Grid -->
+          <div class="results-grid" id="results-grid"></div>
+
+          <!-- Empty -->
+          <div class="empty-state" id="empty-state" hidden>
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
             </div>
+            <h3>No results found</h3>
+            <p>Try a different username or keyword.</p>
+          </div>
+
+          <!-- Load More -->
+          <div style="display:flex;justify-content:center;margin-top:20px;">
+            <button class="load-more-btn" id="load-more" hidden>Load more</button>
           </div>
         </div>
       </section>
     </main>
 
+    <!-- Footer -->
     <footer class="site-footer">
       <div class="container footer-row">
-        <div class="brand">
-          <span class="brand-heart">&hearts;</span>
-          <span>ILOVEREPOST</span>
-        </div>
-        <p>2026 ILOVEREPOST. All rights reserved. <span class="footer-version">v1.0.0</span></p>
+        <span>2026 ILOVEREPOST</span>
+        <span class="footer-version">v1.0.0</span>
       </div>
     </footer>
-
-    <!-- Repost card template -->
-    <template id="result-card-template">
-      <article class="result-card">
-        <div class="thumb-wrap">
-          <img class="thumb" alt="" />
-          <span class="duration-badge duration-text"></span>
-        </div>
-        <div class="result-content">
-          <p class="result-caption"></p>
-          <p class="result-author"></p>
-          <div class="result-meta">
-            <span class="meta-pill meta-likes"></span>
-            <div class="result-actions">
-              <button class="ghost-button download-video" type="button">Download</button>
-              <a class="ghost-button open-video" target="_blank" rel="noopener noreferrer">View</a>
-            </div>
-          </div>
-        </div>
-      </article>
-    </template>
-
-    <!-- Story card template -->
-    <template id="story-card-template">
-      <article class="result-card">
-        <div class="thumb-wrap">
-          <img class="thumb" alt="" />
-          <span class="story-badge-card">Story</span>
-          <span class="duration-badge duration-text"></span>
-        </div>
-        <div class="result-content">
-          <p class="result-caption"></p>
-          <p class="result-author"></p>
-          <div class="result-meta">
-            <span class="meta-pill meta-likes"></span>
-            <div class="result-actions">
-              <button class="ghost-button download-video" type="button">Download</button>
-              <a class="ghost-button open-video" target="_blank" rel="noopener noreferrer">View</a>
-            </div>
-          </div>
-        </div>
-      </article>
-    </template>
 
     <script src="/app.js" defer></script>
   </body>
