@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { json, sendError, serveStaticFile } from "./lib/http.js";
 import { resolveTikTokDownload } from "./lib/downloader.js";
 import { executeSearch, normalizeSearchError } from "./lib/search.js";
+import { identifyMusic } from "./lib/music-identifier.js";
 import { CONTENT_TYPES } from "./lib/plans.js";
 import { getUserState, resolveSession } from "./lib/session-store.js";
 
@@ -14,6 +15,8 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const publicRoot = path.join(projectRoot, "public");
 const port = Number(process.env.PORT || 3000);
+
+const MUSIC_LIMIT = 3;
 
 function getStaticFilePath(urlPathname) {
   const sanitizedPath =
@@ -90,6 +93,38 @@ async function handleApi(request, response, url) {
       return json(response, normalized.statusCode, {
         ...normalized.payload,
         username: username.replace(/^@+/, "")
+      });
+    }
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/music") {
+    const videoUrl = url.searchParams.get("url") || "";
+
+    if (!videoUrl.trim()) {
+      return sendError(response, 400, "The `url` query parameter is required.");
+    }
+
+    // Rate limit: 3 per session
+    if (!session.musicSearches) session.musicSearches = 0;
+    if (session.musicSearches >= MUSIC_LIMIT) {
+      return sendError(response, 429, `Music identification limit reached (${MUSIC_LIMIT} per session).`);
+    }
+
+    session.musicSearches += 1;
+
+    try {
+      const result = await identifyMusic(videoUrl);
+
+      return json(response, 200, {
+        ok: result.found !== false,
+        ...result,
+        remaining: MUSIC_LIMIT - session.musicSearches
+      });
+    } catch (error) {
+      return json(response, 502, {
+        error: error.message,
+        code: "music_identification_failed",
+        remaining: MUSIC_LIMIT - session.musicSearches
       });
     }
   }

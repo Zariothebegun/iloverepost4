@@ -4,13 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ILOVEREPOST</title>
-    <meta name="description" content="Discover reposts from any public TikTok profile. Download videos. Anonymous, fast, free." />
+    <meta name="description" content="Discover reposts, download videos, and identify music from any TikTok profile." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♥</text></svg>" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
 
-    <!-- Header -->
     <header class="site-header">
       <div class="container header-row">
         <a class="brand" href="/">
@@ -25,21 +24,18 @@
     </header>
 
     <main>
-      <!-- Hero -->
       <section class="hero">
         <div class="container hero-inner">
           <h1>Discover any TikTok<br /><em>reposts</em></h1>
-          <p>Enter a username to explore and download reposted videos — completely anonymous.</p>
+          <p>Explore reposted videos, download content, and identify music — completely anonymous.</p>
         </div>
       </section>
 
-      <!-- Search -->
-      <section class="search-section" id="search">
+      <section class="search-section">
         <div class="container">
-          <div class="glass-card search-card">
+          <div class="search-card">
 
-            <!-- Tabs -->
-            <div class="tabs-row">
+            <div class="tabs-row" id="tabs">
               <button class="tab-btn active" data-tab="reposts" type="button">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6 6h4M6 8.5h4M6 11h1.5"/></svg>
                 Reposts
@@ -48,11 +44,15 @@
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2.5v8M4.5 8L8 11.5 11.5 8M3 13.5h10"/></svg>
                 Download
               </button>
+              <button class="tab-btn" data-tab="music" type="button">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><path d="M7.5 12V4l6.5-2v8"/></svg>
+                Music
+              </button>
             </div>
 
-            <!-- Reposts fields -->
+            <!-- Reposts -->
             <div id="reposts-fields">
-              <div class="fields-row">
+              <div class="fields-row search-grid">
                 <div class="input-wrap">
                   <label for="username">Username</label>
                   <input id="username" type="text" placeholder="@username" autocomplete="off" />
@@ -61,7 +61,7 @@
                   <label for="keyword">Keyword</label>
                   <input id="keyword" type="text" placeholder="Filter by keyword…" autocomplete="off" />
                 </div>
-                <button class="glass-btn search-btn" id="search-btn" type="button">Search</button>
+                <button class="search-btn" id="search-btn" type="button">Search</button>
               </div>
               <div class="search-meta">
                 <span class="anon-chip">
@@ -73,17 +73,38 @@
               </div>
             </div>
 
-            <!-- Download field -->
+            <!-- Download -->
             <div id="download-fields" hidden>
-              <div class="fields-row dl-row">
-                <div class="input-wrap" style="flex:1">
-                  <label for="dl-url">TikTok URL</label>
-                  <input id="dl-url" type="url" placeholder="https://www.tiktok.com/@user/video/…" autocomplete="off" />
+              <div id="dl-list" class="dl-list">
+                <div class="dl-row dl-item-row">
+                  <div class="input-wrap">
+                    <label>TikTok URL</label>
+                    <input type="url" class="dl-url-input" placeholder="https://www.tiktok.com/@user/video/…" autocomplete="off" />
+                  </div>
                 </div>
-                <button class="glass-btn search-btn" id="dl-btn" type="button">Download</button>
               </div>
+              <div style="display:flex;gap:10px;margin-bottom:12px">
+                <button class="dl-add" id="dl-add" type="button">+ Add another link</button>
+                <button class="dl-all-btn" id="dl-all-btn" type="button">Download All</button>
+              </div>
+              <div id="dl-results"></div>
               <div class="search-meta">
-                <span>Paste any TikTok video link to download it as MP4</span>
+                <span>Paste TikTok video links to download them as MP4</span>
+              </div>
+            </div>
+
+            <!-- Music -->
+            <div id="music-fields" hidden>
+              <div class="fields-row dl-grid">
+                <div class="input-wrap">
+                  <label for="music-url">TikTok Video URL</label>
+                  <input id="music-url" type="url" placeholder="https://www.tiktok.com/@user/video/…" autocomplete="off" />
+                </div>
+                <button class="search-btn" id="music-btn" type="button">Identify</button>
+              </div>
+              <div id="music-results"></div>
+              <div class="search-meta">
+                <span id="music-limit-text">3 identifications remaining</span>
               </div>
             </div>
 
@@ -91,21 +112,14 @@
         </div>
       </section>
 
-      <!-- Results -->
-      <section class="results-section" id="results">
+      <section class="results-section">
         <div class="container">
-
-          <!-- Status -->
           <div class="status-toast idle" id="status">
             <svg class="status-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5.5v3M8 10.5v.01"/></svg>
             <span id="status-text">Enter a username to get started.</span>
           </div>
 
-          <!-- Download result -->
-          <div id="dl-result" hidden></div>
-
-          <!-- Profile -->
-          <div class="glass-card profile-card" id="profile-card" hidden>
+          <div class="profile-card" id="profile-card" hidden>
             <img id="profile-avatar" alt="" />
             <div class="profile-info">
               <h3 id="profile-name"></h3>
@@ -113,13 +127,9 @@
             </div>
           </div>
 
-          <!-- Skeletons -->
           <div class="skeleton-grid" id="skeleton" hidden></div>
-
-          <!-- Grid -->
           <div class="results-grid" id="results-grid"></div>
 
-          <!-- Empty -->
           <div class="empty-state" id="empty-state" hidden>
             <div class="empty-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
@@ -128,10 +138,9 @@
             <p>Try a different username or keyword.</p>
           </div>
 
-          <!-- Infinite scroll sentinel -->
           <div id="scroll-sentinel" hidden>
-            <div class="liquid-loader">
-              <div class="liquid-orb"></div>
+            <div class="sentinel-loader">
+              <div class="sentinel-orb"></div>
               <span id="scroll-status">Loading more…</span>
             </div>
           </div>
@@ -139,7 +148,6 @@
       </section>
     </main>
 
-    <!-- Footer -->
     <footer class="site-footer">
       <div class="container footer-row">
         <span>2026 ILOVEREPOST</span>

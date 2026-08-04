@@ -2,16 +2,14 @@
 
 const VIDEOS_PER_PAGE = 120;
 const REQUEST_COUNT = 20;
-const PAGES_PER_LOAD = 6;
 
 const state = {
   tab: "reposts",
   cursor: "0",
   ids: new Set(),
-  searchKey: "",
   loading: false,
   hasMore: false,
-  username: ""
+  musicRemaining: 3
 };
 
 const $ = (s) => document.getElementById(s);
@@ -33,23 +31,16 @@ const dom = {
   scrollStatus: $("scroll-status"),
   repostsFields: $("reposts-fields"),
   downloadFields: $("download-fields"),
-  dlUrl: $("dl-url"),
-  dlBtn: $("dl-btn"),
-  dlResult: $("dl-result")
+  musicFields: $("music-fields"),
+  dlList: $("dl-list"),
+  dlAdd: $("dl-add"),
+  dlAllBtn: $("dl-all-btn"),
+  dlResults: $("dl-results"),
+  musicUrl: $("music-url"),
+  musicBtn: $("music-btn"),
+  musicResults: $("music-results"),
+  musicLimitText: $("music-limit-text")
 };
-
-/* ─── Liquid Glass: cursor tracking ─── */
-
-document.addEventListener("mousemove", (e) => {
-  const cards = document.querySelectorAll(".glass-card, .video-card");
-  for (const card of cards) {
-    const rect = card.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    card.style.setProperty("--mouse-x", `${x}%`);
-    card.style.setProperty("--mouse-y", `${y}%`);
-  }
-});
 
 /* ─── Helpers ─── */
 
@@ -95,18 +86,18 @@ function switchTab(tab) {
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   dom.repostsFields.hidden = tab !== "reposts";
   dom.downloadFields.hidden = tab !== "download";
+  dom.musicFields.hidden = tab !== "music";
   dom.grid.innerHTML = "";
   state.ids.clear();
-  state.searchKey = "";
   state.cursor = "0";
   state.hasMore = false;
   dom.profileCard.hidden = true;
   dom.empty.hidden = true;
   dom.sentinel.hidden = true;
-  dom.dlResult.hidden = true;
-  dom.dlResult.innerHTML = "";
+  hideSkeletons();
   if (tab === "reposts") setStatus("Enter a username to get started.");
-  else setStatus("Paste a TikTok video link to download.");
+  else if (tab === "download") setStatus("Paste TikTok video links to download.");
+  else setStatus("Paste a TikTok video link to identify the music.");
 }
 
 document.querySelectorAll(".tab-btn").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
@@ -143,7 +134,7 @@ function buildCard(item) {
   card.querySelector(".dl-v").addEventListener("click", async () => {
     const btn = card.querySelector(".dl-v");
     btn.style.opacity = "0.3"; btn.style.pointerEvents = "none";
-    try { await doDownload(item.videoUrl, item.playUrl); }
+    try { await triggerDownload(item.videoUrl, item.playUrl); }
     catch (e) { setStatus(e.message, "error"); }
     finally { btn.style.opacity = ""; btn.style.pointerEvents = ""; }
   });
@@ -163,17 +154,13 @@ function renderProfile(user) {
 function renderItems(items, append = false) {
   if (!append) { dom.grid.innerHTML = ""; state.ids.clear(); }
   const frag = document.createDocumentFragment();
-  let added = 0;
   for (const item of items) {
     if (state.ids.has(item.videoId)) continue;
     state.ids.add(item.videoId);
     frag.appendChild(buildCard(item));
-    added++;
   }
   dom.grid.appendChild(frag);
-  // Only show empty if grid is empty AFTER rendering
   dom.empty.hidden = dom.grid.children.length > 0;
-  return added;
 }
 
 /* ─── Reposts Search ─── */
@@ -183,10 +170,6 @@ async function search(append = false) {
   const keyword = dom.keyword.value.trim();
   if (!username) { setStatus("Please enter a username.", "error"); return; }
   if (state.loading) return;
-
-  const sk = `reposts::${username.toLowerCase()}`;
-  if (!append) { state.searchKey = sk; state.cursor = "0"; state.ids.clear(); }
-  state.username = username;
 
   state.loading = true;
   dom.searchBtn.disabled = true;
@@ -204,21 +187,19 @@ async function search(append = false) {
     const res = await fetch(url);
     const data = await res.json();
     hideSkeletons();
-
     if (!res.ok) throw new Error(data.error || "Request failed");
 
     state.cursor = data.pagination.cursor;
     state.hasMore = data.pagination.hasMore;
 
     renderProfile(data.user);
-    const added = renderItems(data.items, append);
+    renderItems(data.items, append);
 
     const n = data.items.length;
     const total = state.ids.size;
     const kw = keyword ? ` matching "${keyword}"` : "";
     setStatus(`Loaded ${n} reposts${kw} for @${data.user.username} (${total} total).`, "success");
 
-    // Show sentinel for infinite scroll if more pages
     if (state.hasMore) {
       dom.sentinel.hidden = false;
       dom.scrollStatus.textContent = `Scroll to load more (${total}/${VIDEOS_PER_PAGE})`;
@@ -226,7 +207,6 @@ async function search(append = false) {
   } catch (err) {
     hideSkeletons();
     setStatus(err.message, "error");
-    // Don't show empty on error, keep whatever we have
   } finally {
     state.loading = false;
     dom.searchBtn.disabled = false;
@@ -239,13 +219,30 @@ const observer = new IntersectionObserver((entries) => {
   if (entries[0].isIntersecting && state.hasMore && !state.loading && state.tab === "reposts") {
     search(true);
   }
-}, { rootMargin: "200px" });
+}, { rootMargin: "300px" });
 
 observer.observe(dom.sentinel);
 
 /* ─── Download ─── */
 
-async function doDownload(videoUrl, playUrl = "") {
+function addDlRow() {
+  const row = document.createElement("div");
+  row.className = "dl-row dl-item-row";
+  row.innerHTML = `
+    <div class="input-wrap">
+      <label>TikTok URL</label>
+      <input type="url" class="dl-url-input" placeholder="https://www.tiktok.com/@user/video/…" autocomplete="off" />
+    </div>
+    <button class="dl-remove" type="button" title="Remove">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+    </button>`;
+  row.querySelector(".dl-remove").addEventListener("click", () => row.remove());
+  dom.dlList.appendChild(row);
+}
+
+dom.dlAdd.addEventListener("click", addDlRow);
+
+async function triggerDownload(videoUrl, playUrl = "") {
   const res = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}&playUrl=${encodeURIComponent(playUrl)}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Download failed");
@@ -258,54 +255,127 @@ async function doDownload(videoUrl, playUrl = "") {
   return data;
 }
 
-async function downloadFromUrl() {
-  const url = dom.dlUrl.value.trim();
-  if (!url) { setStatus("Please paste a TikTok URL.", "error"); return; }
+async function downloadAll() {
+  const inputs = dom.dlList.querySelectorAll(".dl-url-input");
+  const urls = Array.from(inputs).map((i) => i.value.trim()).filter(Boolean);
+  if (!urls.length) { setStatus("Please paste at least one TikTok URL.", "error"); return; }
   if (state.loading) return;
 
   state.loading = true;
-  dom.dlBtn.disabled = true;
-  setStatus("Resolving download…", "loading");
+  dom.dlAllBtn.disabled = true;
+  dom.dlResults.innerHTML = "";
+  setStatus(`Downloading ${urls.length} video${urls.length > 1 ? "s" : ""}…`, "loading");
 
-  try {
-    const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Download failed");
+  let ok = 0;
+  for (const url of urls) {
+    try {
+      const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Download failed");
 
-    dom.dlResult.hidden = false;
-    dom.dlResult.innerHTML = `
-      <div class="dl-success">
+      const item = document.createElement("div");
+      item.className = "dl-item";
+      item.innerHTML = `
         ${data.thumbnail ? `<img src="${data.thumbnail}" alt="" />` : ""}
-        <div class="dl-info">
+        <div class="dl-item-info">
           <h4>${data.title || "TikTok Video"}</h4>
-          <p>${data.source === "tikwm" ? "Resolved via TikWM" : "Resolved from TikTok"}</p>
+          <p>${data.source || "tiktok"}</p>
         </div>
-        <button class="dl-download-btn" id="dl-go">Download MP4</button>
-      </div>`;
+        <button class="dl-item-btn">Download</button>`;
+      item.querySelector(".dl-item-btn").addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = data.downloadUrl;
+        a.download = data.filename || "video.mp4";
+        a.target = "_blank";
+        a.click();
+      });
+      dom.dlResults.appendChild(item);
+      ok++;
+    } catch (err) {
+      const item = document.createElement("div");
+      item.className = "dl-item";
+      item.innerHTML = `<div class="dl-item-info"><h4 style="color:var(--error)">${err.message}</h4><p>${url.slice(0, 60)}…</p></div>`;
+      dom.dlResults.appendChild(item);
+    }
+  }
 
-    dom.dlResult.querySelector("#dl-go").addEventListener("click", () => {
-      const a = document.createElement("a");
-      a.href = data.downloadUrl;
-      a.download = data.filename || "video.mp4";
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.click();
-    });
+  setStatus(`Downloaded ${ok}/${urls.length} videos.`, ok > 0 ? "success" : "error");
+  state.loading = false;
+  dom.dlAllBtn.disabled = false;
+}
 
-    setStatus("Download ready!", "success");
-  } catch (err) {
-    dom.dlResult.hidden = true;
-    setStatus(err.message, "error");
-  } finally {
-    state.loading = false;
-    dom.dlBtn.disabled = false;
+dom.dlAllBtn.addEventListener("click", downloadAll);
+
+/* ─── Music Identification ─── */
+
+function updateMusicLimit() {
+  dom.musicLimitText.textContent = `${state.musicRemaining} identification${state.musicRemaining !== 1 ? "s" : ""} remaining`;
+  if (state.musicRemaining <= 0) {
+    dom.musicBtn.disabled = true;
+    dom.musicLimitText.style.color = "var(--error)";
   }
 }
 
-/* ─── Events ─── */
+async function identifyMusic() {
+  const url = dom.musicUrl.value.trim();
+  if (!url) { setStatus("Please paste a TikTok video URL.", "error"); return; }
+  if (state.loading || state.musicRemaining <= 0) return;
 
-dom.searchBtn.addEventListener("click", () => search(false));
-dom.username.addEventListener("keydown", (e) => { if (e.key === "Enter") search(false); });
-dom.keyword.addEventListener("keydown", (e) => { if (e.key === "Enter") search(false); });
-dom.dlBtn.addEventListener("click", downloadFromUrl);
-dom.dlUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") downloadFromUrl(); });
+  state.loading = true;
+  dom.musicBtn.disabled = true;
+  dom.musicResults.innerHTML = "";
+  setStatus("Identifying music… this may take a moment.", "loading");
+
+  try {
+    const res = await fetch(`/api/music?url=${encodeURIComponent(url)}`);
+    const data = await res.json();
+
+    state.musicRemaining = data.remaining ?? 0;
+    updateMusicLimit();
+
+    if (!res.ok) throw new Error(data.error || "Identification failed");
+    if (!data.found) throw new Error(data.error || "Could not identify the music.");
+
+    const links = data.links || {};
+    const linksHtml = [
+      links.spotify ? `<a class="music-link" href="${links.spotify}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="7"/></svg> Spotify</a>` : "",
+      links.appleMusic ? `<a class="music-link" href="${links.appleMusic}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 2v10.5a2 2 0 1 1-2-2V5l8-2v8.5a2 2 0 1 1-2-2V3"/></svg> Apple Music</a>` : "",
+      links.youtube ? `<a class="music-link" href="${links.youtube}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="3"/><path d="M6.5 6v4l3.5-2z" fill="currentColor"/></svg> YouTube</a>` : "",
+      links.soundcloud ? `<a class="music-link" href="${links.soundcloud}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 10h1M4 8h1M6 6h1M8 5h1M10 6h1M12 7h1M14 9h.5"/><path d="M2 10v2M4 8v4M6 6v6M8 5v7M10 6v6M12 7v5M14 9v3"/></svg> SoundCloud</a>` : "",
+      links.deezer ? `<a class="music-link" href="${links.deezer}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12h2v2H2zM5 10h2v4H5zM8 8h2v6H8zM11 6h2v8h-2z"/></svg> Deezer</a>` : ""
+    ].filter(Boolean).join("");
+
+    dom.musicResults.innerHTML = `
+      <div class="music-result">
+        ${data.thumbnail ? `<img class="music-art" src="${data.thumbnail}" alt="" />` : ""}
+        <div class="music-info">
+          <h3>${data.track || "Unknown Track"}</h3>
+          <p class="artist">${data.artist || "Unknown Artist"}</p>
+          ${data.album ? `<p class="album">${data.album}</p>` : ""}
+          <div class="music-links">${linksHtml}</div>
+          <p class="music-limit">Found via ${data.source === "audd_api" ? "AudD audio recognition" : "TikTok metadata"}</p>
+        </div>
+      </div>`;
+
+    setStatus(`Identified: ${data.track} by ${data.artist}`, "success");
+  } catch (err) {
+    setStatus(err.message, "error");
+  } finally {
+    state.loading = false;
+    dom.musicBtn.disabled = state.musicRemaining <= 0;
+  }
+}
+
+dom.musicBtn.addEventListener("click", identifyMusic);
+dom.musicUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") identifyMusic(); });
+
+/* ─── Reposts Events ─── */
+
+dom.searchBtn.addEventListener("click", () => { state.cursor = "0"; search(false); });
+dom.username.addEventListener("keydown", (e) => { if (e.key === "Enter") { state.cursor = "0"; search(false); } });
+dom.keyword.addEventListener("keydown", (e) => { if (e.key === "Enter") { state.cursor = "0"; search(false); } });
