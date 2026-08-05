@@ -57,7 +57,7 @@ async function parseJsonResponse(response) {
   }
 }
 
-async function performRequest(url, options, cookieJar) {
+async function performRequest(url, options, cookieJar, { addCookies = false } = {}) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
@@ -67,7 +67,12 @@ async function performRequest(url, options, cookieJar) {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
       });
 
-      cookieJar.addSetCookieHeaders(getSetCookieHeaders(response.headers));
+      // Only store cookies from successful responses to avoid poisoning the jar
+      // with captcha/verification cookies
+      if (addCookies && response.ok) {
+        cookieJar.addSetCookieHeaders(getSetCookieHeaders(response.headers));
+      }
+
       return response;
     } catch (error) {
       lastError = error;
@@ -275,7 +280,8 @@ async function fetchUserDetailContext(profileUrl, normalizedUsername, cookieJar)
         "sec-fetch-site": "same-origin"
       }
     },
-    cookieJar
+    cookieJar,
+    { addCookies: true }
   );
 
   if (!response.ok) return null;
@@ -320,7 +326,8 @@ async function bootstrapProfileContext(username) {
     {
       headers: buildBrowserHeaders(cookieJar, "https://www.tiktok.com/")
     },
-    cookieJar
+    cookieJar,
+    { addCookies: true }
   );
 
   const html = await response.text();
