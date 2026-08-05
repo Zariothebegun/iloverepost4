@@ -57,7 +57,7 @@ async function parseJsonResponse(response) {
   }
 }
 
-async function performRequest(url, options, cookieJar, { addCookies = false } = {}) {
+async function performRequest(url, options, cookieJar) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
@@ -67,12 +67,7 @@ async function performRequest(url, options, cookieJar, { addCookies = false } = 
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
       });
 
-      // Only store cookies from successful responses to avoid poisoning the jar
-      // with captcha/verification cookies
-      if (addCookies && response.ok) {
-        cookieJar.addSetCookieHeaders(getSetCookieHeaders(response.headers));
-      }
-
+      cookieJar.addSetCookieHeaders(getSetCookieHeaders(response.headers));
       return response;
     } catch (error) {
       lastError = error;
@@ -280,8 +275,7 @@ async function fetchUserDetailContext(profileUrl, normalizedUsername, cookieJar)
         "sec-fetch-site": "same-origin"
       }
     },
-    cookieJar,
-    { addCookies: true }
+    cookieJar
   );
 
   if (!response.ok) return null;
@@ -326,8 +320,7 @@ async function bootstrapProfileContext(username) {
     {
       headers: buildBrowserHeaders(cookieJar, "https://www.tiktok.com/")
     },
-    cookieJar,
-    { addCookies: true }
+    cookieJar
   );
 
   const html = await response.text();
@@ -404,18 +397,7 @@ async function fetchRepostList(profileContext, cursor, count) {
     profileContext.cookieJar
   );
 
-  const text = await response.text();
-
-  // Check if TikTok returned HTML instead of JSON (bot protection / captcha)
-  if (text.trim().startsWith("<")) {
-    throw new Error("TikTok returned a verification page instead of data. Try again in a few minutes.");
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`TikTok returned invalid response: ${text.slice(0, 150)}`);
-  }
+  return parseJsonResponse(response);
 }
 
 function filterItemsByKeyword(items, keyword) {
@@ -637,13 +619,10 @@ export async function searchTikTokProfile({
   try {
     return await run(profileContext);
   } catch (error) {
-    // TikTok sometimes returns transient bot-protection errors. A fresh cookie jar
+    // TikTok sometimes returns transient bot-protection errors (e.g. 100004). A fresh cookie jar
     // (new profile bootstrap) can succeed without the user doing anything.
     const code = extractTikTokStatusCode(error);
-    const message = error?.message || "";
-    const isTransient = code === 100004 || message.includes("verification page") || message.includes("invalid response");
-
-    if (isTransient) {
+    if (code === 100004) {
       profileContext = await bootstrapProfileContext(username);
       return await run(profileContext);
     }
