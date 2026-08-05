@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import { json, sendError, serveStaticFile } from "./lib/http.js";
 import { resolveTikTokDownload } from "./lib/downloader.js";
+
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 import { executeSearch, normalizeSearchError } from "./lib/search.js";
 import { identifyMusic } from "./lib/music-identifier.js";
 import { CONTENT_TYPES } from "./lib/plans.js";
@@ -64,6 +67,49 @@ async function handleApi(request, response, url) {
         account: getUserState(session)
       });
     }
+  }
+
+  // Proxy: stream video file from TikTok CDN to client (bypasses CORS)
+  if (request.method === "GET" && url.pathname === "/api/download/proxy") {
+    const fileUrl = url.searchParams.get("url") || "";
+    const filename = url.searchParams.get("filename") || "video.mp4";
+
+    if (!fileUrl) {
+      return sendError(response, 400, "The `url` query parameter is required.");
+    }
+
+    try {
+      const fileRes = await fetch(fileUrl, {
+        headers: {
+          "user-agent": USER_AGENT,
+          referer: "https://www.tiktok.com/"
+        },
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (!fileRes.ok) {
+        throw new Error(`CDN returned ${fileRes.status}`);
+      }
+
+      response.writeHead(200, {
+        "content-type": "video/mp4",
+        "content-disposition": `attachment; filename="${filename}"`,
+        "cache-control": "no-store"
+      });
+
+      const reader = fileRes.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        response.write(value);
+      }
+      response.end();
+    } catch (error) {
+      if (!response.headersSent) {
+        return sendError(response, 502, `Download proxy failed: ${error.message}`);
+      }
+    }
+    return;
   }
 
   if (request.method === "GET" && (url.pathname === "/api/search" || url.pathname === "/api/reposts")) {

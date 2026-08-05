@@ -247,26 +247,10 @@ async function triggerDownload(videoUrl, playUrl = "") {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Download failed");
 
-  const url = data.downloadUrl;
-  const filename = data.filename || "video.mp4";
+  const proxyUrl = `/api/download/proxy?url=${encodeURIComponent(data.downloadUrl)}&filename=${encodeURIComponent(data.filename || "video.mp4")}`;
 
-  // Try blob download (works on mobile + desktop)
-  try {
-    const fileRes = await fetch(url);
-    const blob = await fileRes.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-  } catch {
-    // Fallback: open in new tab
-    window.open(url, "_blank");
-  }
-
+  // Open proxy URL — browser handles the download directly
+  window.location.href = proxyUrl;
   return data;
 }
 
@@ -302,20 +286,11 @@ async function downloadAll() {
         btn.textContent = "Downloading…";
         btn.disabled = true;
         try {
-          const fileRes = await fetch(data.downloadUrl);
-          const blob = await fileRes.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = blobUrl;
-          a.download = data.filename || "video.mp4";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          const proxyUrl = `/api/download/proxy?url=${encodeURIComponent(data.downloadUrl)}&filename=${encodeURIComponent(data.filename || "video.mp4")}`;
+          window.location.href = proxyUrl;
           btn.textContent = "Done ✓";
         } catch {
-          window.open(data.downloadUrl, "_blank");
-          btn.textContent = "Open";
+          btn.textContent = "Error";
         }
         btn.disabled = false;
       });
