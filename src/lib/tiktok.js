@@ -95,6 +95,19 @@ function parseUniversalData(html) {
   }
 }
 
+function findSecUid(value) {
+  if (!value || typeof value !== "object") return "";
+  if (typeof value.secUid === "string" && value.secUid) return value.secUid;
+  if (typeof value.sec_uid === "string" && value.sec_uid) return value.sec_uid;
+
+  for (const child of Object.values(value)) {
+    const found = findSecUid(child);
+    if (found) return found;
+  }
+
+  return "";
+}
+
 function extractProfileContext(universalData, html, normalizedUsername) {
   const scope = universalData?.__DEFAULT_SCOPE__ ?? {};
   const appContext = scope["webapp.app-context"] ?? {};
@@ -103,7 +116,9 @@ function extractProfileContext(universalData, html, normalizedUsername) {
   const user = userInfo.user ?? null;
   const stats = userInfo.stats ?? null;
 
-  const fallbackSecUid = (html.match(/"secUid":"([^"]+)"/) || [])[1] || "";
+  const secUidMatch = html.match(/"secUid":"([^"]+)"/);
+  const fallbackSecUid =
+    secUidMatch?.[1] || findSecUid(universalData) || "";
   const fallbackNickname = (html.match(/"nickname":"([^"]+)"/) || [])[1] || "";
 
   if (!user?.secUid && !fallbackSecUid) {
@@ -241,6 +256,57 @@ function mapVideoItem(item) {
   };
 }
 
+async function fetchUserDetailContext(profileUrl, normalizedUsername, cookieJar) {
+  const detailUrl = new URL("https://www.tiktok.com/api/user/detail/");
+
+  detailUrl.searchParams.set("unique_id", normalizedUsername);
+  detailUrl.searchParams.set("aid", "1988");
+  detailUrl.searchParams.set("app_name", "tiktok_web");
+  detailUrl.searchParams.set("device_platform", "web_pc");
+
+  const response = await performRequest(
+    detailUrl,
+    {
+      headers: {
+        ...buildBrowserHeaders(cookieJar, profileUrl),
+        accept: "application/json, text/plain, */*",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin"
+      }
+    },
+    cookieJar
+  );
+
+  if (!response.ok) return null;
+
+  let payload;
+
+  try {
+    payload = await parseJsonResponse(response);
+  } catch {
+    return null;
+  }
+
+  const secUid = findSecUid(payload);
+
+  if (!secUid) return null;
+
+  return {
+    __DEFAULT_SCOPE__: {
+      "webapp.user-detail": {
+        userInfo: {
+          user: {
+            uniqueId: normalizedUsername,
+            secUid
+          },
+          stats: {}
+        }
+      }
+    }
+  };
+}
+
 async function bootstrapProfileContext(username) {
   const normalizedUsername = normalizeUsername(username);
   if (!normalizedUsername) {
@@ -262,8 +328,36 @@ async function bootstrapProfileContext(username) {
     throw new Error(`TikTok request failed with ${response.status}: ${html.slice(0, 200)}`);
   }
 
-  const universalData = parseUniversalData(html);
-  const { appContext, user, stats } = extractProfileContext(universalData, html, normalizedUsername);
+  let universalData = parseUniversalData(html);
+  let profileContext;
+
+  try {
+    profileContext = extractProfileContext(
+      universalData,
+      html,
+      normalizedUsername
+    );
+  } catch (error) {
+    const fallbackData = await fetchUserDetailContext(
+      profileUrl,
+      normalizedUsername,
+      cookieJar
+    );
+
+    if (!fallbackData) {
+      throw error;
+    }
+
+    universalData = fallbackData;
+
+    profileContext = extractProfileContext(
+      universalData,
+      "",
+      normalizedUsername
+    );
+  }
+
+  const { appContext, user, stats } = profileContext;
 
   return {
     normalizedUsername,

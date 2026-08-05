@@ -5,15 +5,21 @@ import { fileURLToPath } from "node:url";
 
 import { json, sendError, serveStaticFile } from "./lib/http.js";
 import { resolveTikTokDownload } from "./lib/downloader.js";
+
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
 import { executeSearch, normalizeSearchError } from "./lib/search.js";
-import { CONTENT_TYPES, PLAN_DETAILS, PLAN_TYPES } from "./lib/plans.js";
-import { getUserState, resolveSession, setPlan } from "./lib/session-store.js";
+import { identifyMusic } from "./lib/music-identifier.js";
+import { CONTENT_TYPES } from "./lib/plans.js";
+import { getUserState, resolveSession } from "./lib/session-store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const publicRoot = path.join(projectRoot, "public");
 const port = Number(process.env.PORT || 3000);
+
+const MUSIC_LIMIT = 3;
 
 function getStaticFilePath(urlPathname) {
   const sanitizedPath =
@@ -29,40 +35,12 @@ function getStaticFilePath(urlPathname) {
 
 async function handleApi(request, response, url) {
   const { session } = resolveSession(request, response);
-  const requestedPlan = (request.headers["x-ilr-plan"] || "").toString().toLowerCase();
-
-  if (PLAN_DETAILS[requestedPlan] && session.plan !== requestedPlan) {
-    setPlan(session, requestedPlan);
-  }
 
   if (request.method === "GET" && (url.pathname === "/api/health" || url.pathname === "/health")) {
     return json(response, 200, {
       ok: true,
       service: "iloverepost",
       timestamp: new Date().toISOString()
-    });
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/plans") {
-    return json(response, 200, {
-      plans: PLAN_DETAILS,
-      account: getUserState(session)
-    });
-  }
-
-  if (request.method === "POST" && url.pathname === "/api/account/plan") {
-    const plan = url.searchParams.get("plan") || PLAN_TYPES.FREE;
-
-    if (!PLAN_DETAILS[plan]) {
-      return sendError(response, 400, "Unknown plan.");
-    }
-
-    setPlan(session, plan);
-
-    return json(response, 200, {
-      ok: true,
-      account: getUserState(session),
-      note: `Plan switched to ${plan === PLAN_TYPES.PRO ? "Pro" : "Free"} for local testing.`
     });
   }
 
@@ -89,6 +67,49 @@ async function handleApi(request, response, url) {
         account: getUserState(session)
       });
     }
+  }
+
+  // Proxy: stream video file from TikTok CDN to client (bypasses CORS)
+  if (request.method === "GET" && url.pathname === "/api/download/proxy") {
+    const fileUrl = url.searchParams.get("url") || "";
+    const filename = url.searchParams.get("filename") || "video.mp4";
+
+    if (!fileUrl) {
+      return sendError(response, 400, "The `url` query parameter is required.");
+    }
+
+    try {
+      const fileRes = await fetch(fileUrl, {
+        headers: {
+          "user-agent": USER_AGENT,
+          referer: "https://www.tiktok.com/"
+        },
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (!fileRes.ok) {
+        throw new Error(`CDN returned ${fileRes.status}`);
+      }
+
+      response.writeHead(200, {
+        "content-type": "video/mp4",
+        "content-disposition": `attachment; filename="${filename}"`,
+        "cache-control": "no-store"
+      });
+
+      const reader = fileRes.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        response.write(value);
+      }
+      response.end();
+    } catch (error) {
+      if (!response.headersSent) {
+        return sendError(response, 502, `Download proxy failed: ${error.message}`);
+      }
+    }
+    return;
   }
 
   if (request.method === "GET" && (url.pathname === "/api/search" || url.pathname === "/api/reposts")) {
@@ -118,6 +139,38 @@ async function handleApi(request, response, url) {
       return json(response, normalized.statusCode, {
         ...normalized.payload,
         username: username.replace(/^@+/, "")
+      });
+    }
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/music") {
+    const videoUrl = url.searchParams.get("url") || "";
+
+    if (!videoUrl.trim()) {
+      return sendError(response, 400, "The `url` query parameter is required.");
+    }
+
+    // Rate limit: 3 per session
+    if (!session.musicSearches) session.musicSearches = 0;
+    if (session.musicSearches >= MUSIC_LIMIT) {
+      return sendError(response, 429, `Music identification limit reached (${MUSIC_LIMIT} per session).`);
+    }
+
+    session.musicSearches += 1;
+
+    try {
+      const result = await identifyMusic(videoUrl);
+
+      return json(response, 200, {
+        ok: result.found !== false,
+        ...result,
+        remaining: MUSIC_LIMIT - session.musicSearches
+      });
+    } catch (error) {
+      return json(response, 502, {
+        error: error.message,
+        code: "music_identification_failed",
+        remaining: MUSIC_LIMIT - session.musicSearches
       });
     }
   }
