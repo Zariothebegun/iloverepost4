@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { json, sendError, serveStaticFile } from "./lib/http.js";
 import { resolveTikTokDownload } from "./lib/downloader.js";
+import { getShieldStats } from "./lib/shield.js";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
@@ -173,6 +174,14 @@ async function handleApi(request, response, url) {
         remaining: MUSIC_LIMIT - session.musicSearches
       });
     }
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/shield/stats") {
+    return json(response, 200, {
+      ok: true,
+      shield: getShieldStats(),
+      account: getUserState(session)
+    });
   }
 
   return sendError(response, 404, "API route not found.");
