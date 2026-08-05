@@ -246,12 +246,27 @@ async function triggerDownload(videoUrl, playUrl = "") {
   const res = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}&playUrl=${encodeURIComponent(playUrl)}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Download failed");
-  const a = document.createElement("a");
-  a.href = data.downloadUrl;
-  a.download = data.filename || "video.mp4";
-  a.target = "_blank";
-  a.rel = "noopener";
-  a.click();
+
+  const url = data.downloadUrl;
+  const filename = data.filename || "video.mp4";
+
+  // Try blob download (works on mobile + desktop)
+  try {
+    const fileRes = await fetch(url);
+    const blob = await fileRes.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  } catch {
+    // Fallback: open in new tab
+    window.open(url, "_blank");
+  }
+
   return data;
 }
 
@@ -282,12 +297,27 @@ async function downloadAll() {
           <p>${data.source || "tiktok"}</p>
         </div>
         <button class="dl-item-btn">Download</button>`;
-      item.querySelector(".dl-item-btn").addEventListener("click", () => {
-        const a = document.createElement("a");
-        a.href = data.downloadUrl;
-        a.download = data.filename || "video.mp4";
-        a.target = "_blank";
-        a.click();
+      item.querySelector(".dl-item-btn").addEventListener("click", async () => {
+        const btn = item.querySelector(".dl-item-btn");
+        btn.textContent = "Downloading…";
+        btn.disabled = true;
+        try {
+          const fileRes = await fetch(data.downloadUrl);
+          const blob = await fileRes.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = blobUrl;
+          a.download = data.filename || "video.mp4";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          btn.textContent = "Done ✓";
+        } catch {
+          window.open(data.downloadUrl, "_blank");
+          btn.textContent = "Open";
+        }
+        btn.disabled = false;
       });
       dom.dlResults.appendChild(item);
       ok++;
@@ -359,8 +389,30 @@ async function identifyMusic() {
           ${data.album ? `<p class="album">${data.album}</p>` : ""}
           <div class="music-links">${linksHtml}</div>
           <p class="music-limit">Found via TikTok video metadata</p>
+          ${data.musicUrl ? `<button class="music-link" id="play-music-btn"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l8 5-8 5V3z"/></svg> Play preview</button>` : ""}
         </div>
       </div>`;
+
+    // Play music preview
+    const playBtn = document.getElementById("play-music-btn");
+    if (playBtn && data.musicUrl) {
+      let audio = null;
+      playBtn.addEventListener("click", () => {
+        if (audio) {
+          audio.pause();
+          audio = null;
+          playBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l8 5-8 5V3z"/></svg> Play preview';
+          return;
+        }
+        audio = new Audio(data.musicUrl);
+        audio.play();
+        playBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="3" width="3" height="10"/><rect x="9" y="3" width="3" height="10"/></svg> Pause';
+        audio.onended = () => {
+          playBtn.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3l8 5-8 5V3z"/></svg> Play preview';
+          audio = null;
+        };
+      });
+    }
 
     setStatus(`Identified: ${data.track} by ${data.artist}`, "success");
   } catch (err) {
