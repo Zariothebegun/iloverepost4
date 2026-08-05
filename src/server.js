@@ -55,31 +55,10 @@ async function handleApi(request, response, url) {
 
     try {
       const resolved = await resolveTikTokDownload(videoUrl, playUrl);
+      const fileUrl = resolved.downloadUrl;
+      const filename = resolved.filename || "video.mp4";
 
-      return json(response, 200, {
-        ok: true,
-        ...resolved,
-        account: getUserState(session)
-      });
-    } catch (error) {
-      return json(response, 502, {
-        error: error.message,
-        code: "download_resolution_failed",
-        account: getUserState(session)
-      });
-    }
-  }
-
-  // Proxy: stream video file from TikTok CDN to client (bypasses CORS)
-  if (request.method === "GET" && url.pathname === "/api/download/proxy") {
-    const fileUrl = url.searchParams.get("url") || "";
-    const filename = url.searchParams.get("filename") || "video.mp4";
-
-    if (!fileUrl) {
-      return sendError(response, 400, "The `url` query parameter is required.");
-    }
-
-    try {
+      // Stream the video directly to the client (bypasses CORS + no expiry issues)
       const fileRes = await fetch(fileUrl, {
         headers: {
           "user-agent": USER_AGENT,
@@ -107,7 +86,7 @@ async function handleApi(request, response, url) {
       response.end();
     } catch (error) {
       if (!response.headersSent) {
-        return sendError(response, 502, `Download proxy failed: ${error.message}`);
+        return sendError(response, 502, error.message || "Download failed");
       }
     }
     return;

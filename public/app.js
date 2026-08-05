@@ -243,15 +243,14 @@ function addDlRow() {
 dom.dlAdd.addEventListener("click", addDlRow);
 
 async function triggerDownload(videoUrl, playUrl = "") {
-  const res = await fetch(`/api/download?url=${encodeURIComponent(videoUrl)}&playUrl=${encodeURIComponent(playUrl)}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Download failed");
-
-  const proxyUrl = `/api/download/proxy?url=${encodeURIComponent(data.downloadUrl)}&filename=${encodeURIComponent(data.filename || "video.mp4")}`;
-
-  // Open proxy URL — browser handles the download directly
-  window.location.href = proxyUrl;
-  return data;
+  // Single request: resolve + stream the video file
+  const a = document.createElement("a");
+  a.href = `/api/download?url=${encodeURIComponent(videoUrl)}&playUrl=${encodeURIComponent(playUrl)}`;
+  a.download = "video.mp4";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function downloadAll() {
@@ -281,18 +280,14 @@ async function downloadAll() {
           <p>${data.source || "tiktok"}</p>
         </div>
         <button class="dl-item-btn">Download</button>`;
-      item.querySelector(".dl-item-btn").addEventListener("click", async () => {
-        const btn = item.querySelector(".dl-item-btn");
-        btn.textContent = "Downloading…";
-        btn.disabled = true;
-        try {
-          const proxyUrl = `/api/download/proxy?url=${encodeURIComponent(data.downloadUrl)}&filename=${encodeURIComponent(data.filename || "video.mp4")}`;
-          window.location.href = proxyUrl;
-          btn.textContent = "Done ✓";
-        } catch {
-          btn.textContent = "Error";
-        }
-        btn.disabled = false;
+      item.querySelector(".dl-item-btn").addEventListener("click", () => {
+        const a = document.createElement("a");
+        a.href = `/api/download?url=${encodeURIComponent(url)}`;
+        a.download = "video.mp4";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       });
       dom.dlResults.appendChild(item);
       ok++;
