@@ -134,8 +134,16 @@ function buildCard(item) {
   card.querySelector(".dl-v").addEventListener("click", async () => {
     const btn = card.querySelector(".dl-v");
     btn.style.opacity = "0.3"; btn.style.pointerEvents = "none";
-    try { await triggerDownload(item.videoUrl, item.playUrl); }
-    catch (e) { setStatus(e.message, "error"); }
+    try {
+      // Always use videoUrl only — let TikWM resolve the download (playUrl CDN returns 403)
+      const a = document.createElement("a");
+      a.href = `/api/download?url=${encodeURIComponent(item.videoUrl)}`;
+      a.download = "video.mp4";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) { setStatus(e.message, "error"); }
     finally { btn.style.opacity = ""; btn.style.pointerEvents = ""; }
   });
   return card;
@@ -242,66 +250,25 @@ function addDlRow() {
 
 dom.dlAdd.addEventListener("click", addDlRow);
 
-async function triggerDownload(videoUrl, playUrl = "") {
-  // Single request: resolve + stream the video file
-  const a = document.createElement("a");
-  a.href = `/api/download?url=${encodeURIComponent(videoUrl)}&playUrl=${encodeURIComponent(playUrl)}`;
-  a.download = "video.mp4";
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
 async function downloadAll() {
   const inputs = dom.dlList.querySelectorAll(".dl-url-input");
   const urls = Array.from(inputs).map((i) => i.value.trim()).filter(Boolean);
   if (!urls.length) { setStatus("Please paste at least one TikTok URL.", "error"); return; }
-  if (state.loading) return;
 
-  state.loading = true;
-  dom.dlAllBtn.disabled = true;
-  dom.dlResults.innerHTML = "";
-  setStatus(`Downloading ${urls.length} video${urls.length > 1 ? "s" : ""}…`, "loading");
-
-  let ok = 0;
+  // Trigger download for each URL
   for (const url of urls) {
-    try {
-      const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Download failed");
-
-      const item = document.createElement("div");
-      item.className = "dl-item";
-      item.innerHTML = `
-        ${data.thumbnail ? `<img src="${data.thumbnail}" alt="" />` : ""}
-        <div class="dl-item-info">
-          <h4>${data.title || "TikTok Video"}</h4>
-          <p>${data.source || "tiktok"}</p>
-        </div>
-        <button class="dl-item-btn">Download</button>`;
-      item.querySelector(".dl-item-btn").addEventListener("click", () => {
-        const a = document.createElement("a");
-        a.href = `/api/download?url=${encodeURIComponent(url)}`;
-        a.download = "video.mp4";
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      });
-      dom.dlResults.appendChild(item);
-      ok++;
-    } catch (err) {
-      const item = document.createElement("div");
-      item.className = "dl-item";
-      item.innerHTML = `<div class="dl-item-info"><h4 style="color:var(--error)">${err.message}</h4><p>${url.slice(0, 60)}…</p></div>`;
-      dom.dlResults.appendChild(item);
-    }
+    const a = document.createElement("a");
+    a.href = `/api/download?url=${encodeURIComponent(url)}`;
+    a.download = "video.mp4";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Small delay between downloads so browser doesn't block them
+    await new Promise(r => setTimeout(r, 500));
   }
 
-  setStatus(`Downloaded ${ok}/${urls.length} videos.`, ok > 0 ? "success" : "error");
-  state.loading = false;
-  dom.dlAllBtn.disabled = false;
+  setStatus(`Downloading ${urls.length} video${urls.length > 1 ? "s" : ""}…`, "success");
 }
 
 dom.dlAllBtn.addEventListener("click", downloadAll);
