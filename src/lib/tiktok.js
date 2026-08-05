@@ -1,5 +1,12 @@
 import { SimpleCookieJar } from "./cookie-jar.js";
 import { CONTENT_TYPES } from "./plans.js";
+import {
+  getRandomUserAgent,
+  jitterDelay,
+  getCacheKey,
+  getCached,
+  setCached
+} from "./shield.js";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
@@ -25,7 +32,7 @@ function normalizeUsername(username) {
 
 function buildBrowserHeaders(cookieJar, referer) {
   const headers = {
-    "user-agent": USER_AGENT,
+    "user-agent": getRandomUserAgent(),
     accept: "text/html,application/json,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "accept-language": "en-US,en;q=0.9",
     "cache-control": "no-cache",
@@ -62,6 +69,11 @@ async function performRequest(url, options, cookieJar) {
 
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt += 1) {
     try {
+      // Jitter delay before each retry attempt
+      if (attempt > 1) {
+        await jitterDelay(1000, 3000);
+      }
+
       const response = await fetch(url, {
         ...options,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
@@ -370,6 +382,18 @@ async function bootstrapProfileContext(username) {
 }
 
 async function fetchRepostList(profileContext, cursor, count) {
+  // Cache key for this specific request
+  const cacheKey = getCacheKey(
+    `repost:${profileContext.user.secUid}:${cursor}:${count}`,
+    profileContext.cookieJar.get("msToken") || ""
+  );
+
+  const cached = getCached(cacheKey);
+  if (cached) {
+    console.log(`[TIKTOK] Cache hit for repost list cursor=${cursor}`);
+    return cached;
+  }
+
   const listUrl = new URL("https://www.tiktok.com/api/repost/item_list/");
   const params = buildListParams({
     secUid: profileContext.user.secUid,
@@ -397,7 +421,12 @@ async function fetchRepostList(profileContext, cursor, count) {
     profileContext.cookieJar
   );
 
-  return parseJsonResponse(response);
+  const result = await parseJsonResponse(response);
+
+  // Cache the result
+  setCached(cacheKey, result);
+
+  return result;
 }
 
 function filterItemsByKeyword(items, keyword) {
